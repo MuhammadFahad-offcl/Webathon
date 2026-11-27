@@ -6,6 +6,10 @@ import { DISCONNECT_GAP_MS, GRACE_MS, INCIDENT_MAX_PER_MIN, WRITTEN_MAX_CHARS } 
 
 type Snapshot = { type: "MCQ" | "MULTI" | "WRITTEN"; text: string; topic: string; difficulty: string; negativeMarks: number; multiScheme: string; options: { id: string; text: string; isCorrect: boolean }[] };
 export type SaveItem = { questionId: string; response: unknown; flagged: boolean; seq: number; elapsedMs: number };
+export function isAnswerWithinSyncWindow(elapsedMs: number, startedAt: Date, expiresAt: Date, now: Date) {
+  if (now <= expiresAt) return true;
+  return now.getTime() <= expiresAt.getTime() + GRACE_MS && elapsedMs <= expiresAt.getTime() - startedAt.getTime();
+}
 const shuffle = <T,>(items: T[]) => { const result = [...items]; for (let i = result.length - 1; i > 0; i--) { const j = randomInt(i + 1); [result[i], result[j]] = [result[j], result[i]]; } return result; };
 const answered = (value: unknown) => !!value && typeof value === "object" && ("text" in value ? typeof value.text === "string" && value.text.trim().length > 0 : "optionIds" in value && Array.isArray(value.optionIds) && value.optionIds.length > 0);
 export function gradeObjective(s: Snapshot, value: unknown, marks: number) { if (!answered(value)) return 0; const ids = (value as { optionIds: string[] }).optionIds; const correct = s.options.filter(o => o.isCorrect).map(o => o.id); if (s.type === "MCQ") return correct.includes(ids[0]) ? marks : s.negativeMarks > 0 ? -s.negativeMarks : 0; if (s.multiScheme === "ALL_OR_NOTHING") return ids.length === correct.length && ids.every(id => correct.includes(id)) ? marks : 0; return marks * Math.max(0, (ids.filter(id => correct.includes(id)).length - ids.filter(id => !correct.includes(id)).length) / correct.length); }
@@ -62,7 +66,7 @@ export async function saveAnswers(id: string, userId: string, items: SaveItem[])
   for (const item of items) {
     const now = new Date(); const q = byId.get(item.questionId);
     let status = "rejected_invalid";
-    if (a.status !== "IN_PROGRESS" || now.getTime() > a.expiresAt.getTime() + GRACE_MS || (now > a.expiresAt && item.elapsedMs > a.exam.durationMin * 60000)) status = "rejected_late";
+    if (a.status !== "IN_PROGRESS" || !isAnswerWithinSyncWindow(item.elapsedMs, a.startedAt, a.expiresAt, now)) status = "rejected_late";
     else if (q && valid(q.snapshot as Snapshot, item.response)) {
       const updated = await prisma.answer.updateMany({ where: { attemptQuestionId: q.id, seq: { lt: item.seq }, attemptQuestion: { attempt: { status: "IN_PROGRESS" } } }, data: { response: item.response as Prisma.InputJsonValue, flagged: item.flagged, seq: item.seq, savedAt: now } });
       if (updated.count) status = "saved";
