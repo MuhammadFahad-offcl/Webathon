@@ -1,17 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiClientError, apiFetch } from "@/lib/client/api";
 import { loginSchema } from "@/lib/validation/auth";
 import { Button } from "@/frontend/components/ui/button";
 import { Input } from "@/frontend/components/ui/input";
+import { ExamIllustration } from "@/frontend/marketing/exam-illustration";
+import { ExamSysBrand } from "@/frontend/marketing/brand";
 
-const demoAccounts = [
-  { role: "Administrator", email: "admin@exam.test", password: "Admin@123" },
-  { role: "Examiner", email: "examiner@exam.test", password: "Exam@123" },
-  { role: "Candidate", email: "candidate1@exam.test", password: "Cand@123" },
-];
+const roleDestinations: Record<"ADMIN" | "EXAMINER" | "CANDIDATE", string> = {
+  ADMIN: "/admin/users",
+  EXAMINER: "/examiner/exams",
+  CANDIDATE: "/dashboard",
+};
 
 export function LoginForm() {
   const router = useRouter();
@@ -38,11 +41,11 @@ export function LoginForm() {
 
     setSubmitting(true);
     try {
-      await apiFetch<{ user: { role: string } }>("/api/auth/login", {
+      const result = await apiFetch<{ user: { role: keyof typeof roleDestinations } }>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify(parsed.data),
       });
-      router.replace("/");
+      router.replace(roleDestinations[result.user.role]);
       router.refresh();
     } catch (error) {
       if (error instanceof ApiClientError) {
@@ -57,39 +60,50 @@ export function LoginForm() {
   }
 
   return (
-    <div className="login-wrap">
-      <section className="login-intro" aria-label="About ExamSys">
-        <div className="flex items-center gap-3 font-bold tracking-wide">
-          <span className="app-brand-mark" aria-hidden="true">EX</span>
-          EXAMSYS
-        </div>
-        <div className="max-w-xl py-12">
-          <p className="mb-4 text-sm font-bold uppercase tracking-[0.18em] text-emerald-200">Secure examination system</p>
-          <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-            A calmer, fairer way to take exams.
-          </h1>
-          <p className="mt-5 max-w-lg text-lg leading-relaxed text-emerald-50/85">
-            Clear instructions, server-timed assessments, and reliable progress saving help everyone focus on the work.
+    <main className="auth-page">
+      <section className="auth-story" aria-label="About ExamSys">
+        <ExamSysBrand className="auth-brand" />
+        <div className="auth-story-copy">
+          <p className="auth-eyebrow">A secure examination system</p>
+          <h1>Welcome back.<br /><span>Your next exam starts here.</span></h1>
+          <p className="auth-story-description">
+            A calmer, fairer way to learn and assess. Your instructions and
+            progress stay organized, so you can focus on the work.
           </p>
         </div>
-        <p className="text-sm text-emerald-100/75">Built for students, examiners, and administrators.</p>
+        <ExamIllustration variant="auth" />
+        <div className="auth-story-benefits">
+          <span><b aria-hidden="true">✓</b> Secure &amp; reliable</span>
+          <span><b aria-hidden="true">↗</b> Easy access</span>
+          <span><b aria-hidden="true">▥</b> Track progress</span>
+        </div>
       </section>
 
-      <section className="login-panel">
-        <div className="login-card page-surface">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[var(--brand)]">Welcome back</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight">Sign in to ExamSys</h2>
-            <p className="mt-2 text-sm text-muted">Use the account provided by your institution.</p>
+      <section className="auth-panel" aria-label="Sign in to ExamSys">
+        <div className="auth-panel-toolbar">
+          <Link href="/" className="auth-back-link"><span aria-hidden="true">←</span> Back to home</Link>
+          <span className="auth-secure-note"><span aria-hidden="true">●</span> Secure sign in</span>
+        </div>
+        <div className="auth-card">
+          <div className="auth-card-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <path d="m3 14 17-9 17 9-17 9L3 14Z" fill="currentColor" />
+              <path d="m10 18 10 5 10-5v8c-5.8 5-14.2 5-20 0v-8Z" fill="currentColor" opacity=".8" />
+              <path d="M36 15v11" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" />
+              <circle cx="36" cy="29" r="2" fill="currentColor" />
+            </svg>
           </div>
+          <p className="auth-card-eyebrow">Welcome back</p>
+          <h2>Sign in to ExamSys</h2>
+          <p className="auth-card-description">Use the account provided by your institution.</p>
 
-          <form className="login-form" onSubmit={(event) => void submit(event)} noValidate>
+          <form className="auth-form" onSubmit={(event) => void submit(event)} noValidate>
             {formError && (
-              <p className="rounded-lg border border-[var(--danger)] px-3 py-2 text-sm text-[var(--danger)]" role="alert">
+              <p className="auth-form-error" role="alert">
                 {formError}
               </p>
             )}
-            <label className="form-label" htmlFor="login-email">
+            <label className="auth-label" htmlFor="login-email">
               Email address
               <Input
                 id="login-email"
@@ -97,14 +111,16 @@ export function LoginForm() {
                 type="email"
                 autoComplete="username"
                 required
+                placeholder="you@institution.edu"
                 value={email}
                 aria-invalid={Boolean(errors.email)}
                 aria-describedby={errors.email ? "login-email-error" : undefined}
                 onChange={(event) => setEmail(event.target.value)}
+                className="auth-input"
               />
-              {errors.email && <span className="text-sm text-[var(--danger)]" id="login-email-error">{errors.email}</span>}
+              {errors.email && <span className="auth-field-error" id="login-email-error">{errors.email}</span>}
             </label>
-            <label className="form-label" htmlFor="login-password">
+            <label className="auth-label" htmlFor="login-password">
               Password
               <Input
                 id="login-password"
@@ -112,32 +128,27 @@ export function LoginForm() {
                 type="password"
                 autoComplete="current-password"
                 required
+                placeholder="Enter your password"
                 value={password}
                 aria-invalid={Boolean(errors.password)}
                 aria-describedby={errors.password ? "login-password-error" : undefined}
                 onChange={(event) => setPassword(event.target.value)}
+                className="auth-input"
               />
-              {errors.password && <span className="text-sm text-[var(--danger)]" id="login-password-error">{errors.password}</span>}
+              {errors.password && <span className="auth-field-error" id="login-password-error">{errors.password}</span>}
             </label>
-            <Button className="mt-1 w-full" type="submit" disabled={submitting}>
-              {submitting ? "Signing in…" : "Sign in"}
+            <Button className="auth-submit" type="submit" disabled={submitting}>
+              {submitting ? "Signing in..." : "Sign in"} <span aria-hidden="true">→</span>
             </Button>
           </form>
 
-          <details className="mt-7 border-t border-[var(--border)] pt-5">
-            <summary className="cursor-pointer text-sm font-bold">Demo accounts</summary>
-            <ul className="mt-3 grid gap-3 text-sm">
-              {demoAccounts.map((account) => (
-                <li key={account.email} className="rounded-lg bg-[var(--surface-2)] p-3">
-                  <p className="font-bold">{account.role}</p>
-                  <p className="mt-1 font-mono text-xs">{account.email}</p>
-                  <p className="font-mono text-xs">{account.password}</p>
-                </li>
-              ))}
-            </ul>
-          </details>
+          <div className="auth-divider"><span>Institution account</span></div>
+          <p className="auth-account-note">
+            Need an account? Contact your institution&apos;s ExamSys administrator.
+          </p>
         </div>
+        <p className="auth-panel-footer">Protected access for candidates, examiners, and administrators.</p>
       </section>
-    </div>
+    </main>
   );
 }

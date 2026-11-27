@@ -1,20 +1,11 @@
-import { Suspense } from "react";
-import { Role } from "@prisma/client";
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth/guards";
+import type { Metadata } from "next";
+import { LandingPage } from "@/frontend/marketing/landing-page";
 
-async function RoleHome(): Promise<never> {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role === Role.ADMIN) redirect("/admin/users");
-  if (session.role === Role.EXAMINER) redirect("/examiner/exams");
-  redirect("/dashboard");
-}
+export const metadata: Metadata = {
+  title: "A calmer, fairer way to take exams",
+  description: "A secure, simple examination experience for students and educators.",
+};
 
 export default function Home() {
-  return (
-    <Suspense fallback={<main className="p-8 text-sm text-muted">Loading ExamSys…</main>}>
-      <RoleHome />
-    </Suspense>
-  );
+  return <LandingPage />;
 }
