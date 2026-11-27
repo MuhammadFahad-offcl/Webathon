@@ -86,9 +86,16 @@ describe("simulateFairness", () => {
       simulateFairness(questions, { EASY: 0, MEDIUM: 0, HARD: 0 }),
     ).toThrow("Invalid paper size");
 
-    expect(() =>
-      simulateFairness(questions, { EASY: 2, MEDIUM: 2, HARD: 2 }),
-    ).toThrow("Invalid paper size");
+    const largerPaper = simulateFairness(
+      questions,
+      { EASY: 2, MEDIUM: 2, HARD: 2 },
+      { simulations: 1, random: stableRandom },
+    );
+    expect(largerPaper.simulations[0].balancedDistribution).toEqual({
+      EASY: 2,
+      MEDIUM: 2,
+      HARD: 2,
+    });
   });
 
   it("rejects invalid question data and duplicate ids", () => {
