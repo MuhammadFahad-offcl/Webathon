@@ -423,6 +423,122 @@ a {
   font-weight: 700;
 }
 
+.results-page {
+  display: grid;
+  width: min(100%, 70rem);
+  gap: 1.25rem;
+  margin: 0 auto;
+}
+
+.results-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.results-score {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(12rem, 0.8fr);
+  align-items: center;
+  gap: 1.5rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+.results-score-value {
+  margin: 0.3rem 0 0;
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  font-weight: 850;
+  letter-spacing: -0.04em;
+}
+
+.results-score-value span {
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.results-percentage {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  border-left: 1px solid var(--border);
+  padding-left: 1.5rem;
+}
+
+.results-percentage span:first-child {
+  color: var(--brand);
+  font-size: 1.8rem;
+  font-weight: 800;
+}
+
+.results-report-actions {
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+  border-left: 1px solid var(--border);
+  padding-left: 1.5rem;
+}
+
+.results-verify-code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.results-section {
+  display: grid;
+  gap: 1.25rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+.results-topic-list,
+.results-question-list {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results-topic {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.results-topic-track {
+  height: 0.7rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.results-topic-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.results-question {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.results-question-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.results-question-heading p {
+  margin-bottom: 0;
+}
+
 @media (max-width: 760px) {
   :root {
     --space-page: 1rem;
@@ -494,6 +610,36 @@ a {
   .candidate-exam-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .results-score {
+    grid-template-columns: 1fr;
+  }
+
+  .results-percentage,
+  .results-report-actions {
+    justify-items: start;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+    padding: 1rem 0 0;
+  }
+
+  .results-header,
+  .results-question-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+html[data-density="compact"] .workspace-main {
+  padding: 1rem;
+}
+
+html[data-density="compact"] .workspace-question,
+html[data-density="compact"] .workspace-palette,
+html[data-density="compact"] .workspace-shortcuts,
+html[data-density="compact"] .workspace-scratchpad,
+html[data-density="compact"] .results-section {
+  padding: 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -661,6 +807,24 @@ a {
   gap: 1.25rem;
 }
 
+.workspace-grid.palette-left {
+  grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+}
+
+.workspace-grid.palette-left .workspace-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.workspace-grid.palette-left .workspace-question-column {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.workspace-grid.palette-bottom {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workspace-question-column,
 .workspace-sidebar {
   min-width: 0;
@@ -761,6 +925,11 @@ a {
   padding: 0.1rem 0.3rem;
 }
 
+.workspace-scratchpad {
+  min-width: 0;
+  padding: 1.25rem;
+}
+
 .workspace-footer {
   display: flex;
   flex-wrap: wrap;
@@ -809,6 +978,19 @@ a {
 
   .workspace-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-grid.palette-left .workspace-sidebar,
+  .workspace-grid.palette-left .workspace-question-column {
+    grid-column: 1;
+  }
+
+  .workspace-grid.palette-left .workspace-question-column {
+    grid-row: 1;
+  }
+
+  .workspace-grid.palette-left .workspace-sidebar {
+    grid-row: 2;
   }
 
   .workspace-sidebar {
