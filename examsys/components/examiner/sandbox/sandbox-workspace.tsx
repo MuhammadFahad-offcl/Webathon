@@ -199,7 +199,7 @@ export function SandboxWorkspace({ attemptId, onSubmitted }: Readonly<ExamWorksp
   if (!data) {
     return (
       <div className="grid gap-4" aria-busy="true">
-        <Skeleton className="h-20" label="Loading preview" />
+        <Skeleton className="h-20" />
         <Skeleton className="h-40" />
         <Skeleton className="h-40" />
       </div>
