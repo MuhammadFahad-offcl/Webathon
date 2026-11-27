@@ -38,12 +38,12 @@ Call M1's helpers: `requireRole`, `assertExamOwner`, `recomputeAttemptScore`, `f
 - [ ] **Review page** before publish: summary of settings, question list with marks, total marks check, enrolled count, and a clear "Publish" confirm dialog.
 
 ### Phase C - Question bank
-- [ ] `GET/POST/PATCH/DELETE /api/questions`: filter by topic, difficulty, type, free-text search; pagination. Validation by type: MCQ needs exactly 1 correct option and >= 2 options; MULTI needs >= 1 correct and >= 2 options; WRITTEN needs no options. Don't hard-delete a question used by an exam (return 409, offer archive/duplicate).
+- [ ] `GET/POST/PATCH/DELETE /api/questions` (examiners see and edit only questions they created; admins see all): filter by topic, difficulty, type, free-text search; pagination. Validation by type: MCQ needs exactly 1 correct option and >= 2 options; MULTI needs >= 1 correct and >= 2 options; WRITTEN needs no options. Don't hard-delete a question used by an exam (return 409, offer archive/duplicate).
 - [ ] UI `/examiner/questions`: filter bar, table, create/edit drawer with dynamic option rows, topic autocomplete, difficulty select, marks, negative marks, multi-select scheme.
 - [ ] Picker dialog inside an exam to add questions from the bank (filters + multi-select + marks input) and drag/arrow reordering.
 
 ### Phase D - Candidate enrollment
-- [ ] `POST /api/exams/:id/enrollments` (by user ids or emails), `DELETE` single, `GET` list (name, email, status: not started / in progress / submitted).
+- [ ] `GET /api/candidates?search=` (EXAMINER/ADMIN; returns only id, name, email, rollNo of CANDIDATE users - examiners cannot call `/api/users`), `POST /api/exams/:id/enrollments` (by user ids or emails), `DELETE` single, `GET` list (name, email, status: not started / in progress / submitted).
 - [ ] UI "Candidates" tab: search users with role CANDIDATE, add selected, remove, show attempt status per candidate.
 - [ ] Reject enrolling non-candidates; ignore duplicates gracefully (unique `(examId,userId)`).
 
@@ -60,7 +60,8 @@ Call M1's helpers: `requireRole`, `assertExamOwner`, `recomputeAttemptScore`, `f
 
 ### Phase G - Evaluation & grading (3.7)
 - [ ] `GET /api/exams/:id/submissions` (list attempts + status + score) and `GET /api/attempts/:id/review` (examiner view: questions, candidate's responses, correct answers, awarded marks).
-- [ ] `PATCH /api/answers/:id/grade`: only for WRITTEN answers; validate `0 <= awardedMarks <= marks`; save feedback; then call M1's `recomputeAttemptScore`.
+- [ ] `GET /api/exams/:id/grading/queue` (ungraded WRITTEN answers of finalized attempts; optional `questionId` / `candidateId` filters) feeds the grading UI.
+- [ ] `PATCH /api/answers/:id/grade`: only for WRITTEN answers of finalized attempts, and rejected with 409 once results are published; validate `0 <= awardedMarks <= marks`; save feedback; then call M1's `recomputeAttemptScore`.
 - [ ] UI Grading tab: queue of ungraded written answers (filter by question or candidate), side-by-side question + answer + marks input with live validation, "Save & next". Show grading progress ("14 / 20 graded").
 - [ ] Results tab: scores table, "Publish results" button (calls M1's publish endpoint; show blockers if any attempt is unfinalized/ungraded).
 

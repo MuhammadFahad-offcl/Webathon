@@ -78,13 +78,15 @@ components/examiner/            M2
 ```json
 { "error": { "code": "VALIDATION_ERROR", "message": "Human readable", "fields": { "durationMin": "Must be > 0" } } }
 ```
+`fields` is present on validation errors; an optional `details` object carries structured extras (for example the blockers that prevent publishing results).
 Status codes: 400 validation · 401 not logged in · 403 forbidden · 404 not found · 409 conflict (duplicate/state) · 429 rate limited.
 Codes in use: `VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, EXAM_NOT_AVAILABLE, EXAM_ENDED, ATTEMPT_CLOSED, NOT_ENROLLED, RATE_LIMITED`.
+`ATTEMPT_CLOSED` (409) = heartbeat/incident call on an already finalized attempt. Wrong role -> 403 `FORBIDDEN`; resource owned by someone else (other user's attempt, other examiner's exam) -> 404 `NOT_FOUND`, so existence is not revealed.
 
 **Auth helpers (M1 provides in `lib/auth`):**
 ```ts
 getSession(): Promise<{ userId, role } | null>
-requireRole(...roles: Role[]): Promise<{ userId, role }>   // throws 401/403
+requireRole(...roles: Role[]): Promise<{ userId, role }>   // throws 401/403; re-reads role + active flag from the DB so deactivation and role changes apply immediately
 assertExamOwner(examId, userId, role)                       // examiner owns exam, admins pass
 assertEnrolled(examId, userId)
 ```
@@ -95,7 +97,7 @@ assertEnrolled(examId, userId)
 **Time:** all enforcement uses server time (`new Date()` on the server). Client clocks are display-only.
 
 **Exam status:** stored `DRAFT | PUBLISHED | ARCHIVED`. Derived for display (helper `deriveExamPhase(exam, now)` by M1):
-`DRAFT` -> `PUBLISHED_UPCOMING` (now < startAt) -> `ONGOING` -> `COMPLETED` (now > endAt).
+`DRAFT` -> `UPCOMING` (published, now < startAt) -> `ONGOING` (startAt <= now <= endAt) -> `COMPLETED` (now > endAt). `ARCHIVED` passes through unchanged (optional, not needed for the demo). There is no "unpublish": a PUBLISHED exam never returns to DRAFT. Publishing results sets `resultsPublishedAt` and closes the exam to new attempts.
 
 ## 5. Grading rules (document these in the README)
 
@@ -113,11 +115,12 @@ Owner column = who implements. Consumers may build against these shapes with moc
 | Method + Path | Owner | Who can call |
 |---|---|---|
 | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/me` | M1 | any |
-| `GET/POST/PATCH /api/users` | M2 | ADMIN |
-| `GET/POST/PATCH /api/exams`, `GET /api/exams/:id`, `POST /api/exams/:id/publish` | M2 | EXAMINER (own), ADMIN |
-| `GET/POST/PATCH/DELETE /api/questions` | M2 | EXAMINER, ADMIN |
+| `GET/POST /api/users`, `PATCH /api/users/:id` | M2 | ADMIN |
+| `GET/POST /api/exams`, `GET/PATCH /api/exams/:id`, `POST /api/exams/:id/publish` | M2 | EXAMINER (own), ADMIN |
+| `GET/POST /api/questions`, `GET/PATCH/DELETE /api/questions/:id` | M2 | EXAMINER (own), ADMIN |
 | `PUT /api/exams/:id/questions` (assign list + marks + order) | M2 | EXAMINER (own) |
 | `POST /api/exams/:id/enrollments`, `GET /api/exams/:id/enrollments`, `DELETE /api/exams/:id/enrollments/:userId` | M2 | EXAMINER (own) |
+| `GET /api/candidates?search=` (minimal candidate lookup for enrollment: id, name, email, rollNo) | M2 | EXAMINER, ADMIN |
 | `POST /api/import/questions`, `POST /api/import/candidates` | M2 | EXAMINER, ADMIN |
 | `GET /api/candidate/exams` | M1 | CANDIDATE |
 | `POST /api/exams/:id/attempts` (start or resume) | M1 | CANDIDATE (enrolled) / EXAMINER (sandbox) |
@@ -127,6 +130,7 @@ Owner column = who implements. Consumers may build against these shapes with moc
 | `POST /api/attempts/:id/heartbeat`, `POST /api/attempts/:id/incidents` | M1 | owner |
 | `GET /api/exams/:id/monitor`, `POST /api/exams/:id/announcements`, `GET /api/exams/:id/announcements` | M2 | EXAMINER(own) / CANDIDATE(enrolled, GET only) |
 | `GET /api/exams/:id/submissions`, `GET /api/attempts/:id/review` (examiner view with keys), `PATCH /api/answers/:id/grade` | M2 (calls M1 grading service) | EXAMINER (own) |
+| `GET /api/exams/:id/grading/queue` (ungraded WRITTEN answers) | M2 | EXAMINER (own) |
 | `POST /api/exams/:id/results/publish` | M1 | EXAMINER (own) |
 | `GET /api/candidate/results/:attemptId` | M1 | owner, only if published |
 | `GET /api/exams/:id/analytics`, `GET /api/exams/:id/questions/analytics` | M2 | EXAMINER (own) |
@@ -165,13 +169,14 @@ Errors: `NOT_ENROLLED` 403, `EXAM_NOT_AVAILABLE` 403 (before start / not publish
 { "items": [ { "questionId": "<attemptQuestionId>", "response": { "optionIds": ["o1","o3"] },
                "flagged": false, "seq": 7, "elapsedMs": 183400 } ] }
 // response
-{ "serverNow": "...", "expiresAt": "...", "results": [ { "questionId": "..", "status": "saved|ignored_stale|rejected_late" } ] }
+{ "serverNow": "...", "expiresAt": "...", "results": [ { "questionId": "..", "status": "saved|ignored_stale|rejected_late|rejected_invalid" } ] }
 ```
-Response format by type: MCQ `{ "optionIds": ["x"] }` · MULTI `{ "optionIds": ["x","y"] }` · WRITTEN `{ "text": "..." }`.
+Response format by type: MCQ `{ "optionIds": ["x"] }` · MULTI `{ "optionIds": ["x","y"] }` · WRITTEN `{ "text": "..." }` (empty array / empty text = answer cleared).
+Per-item statuses never fail the batch: `rejected_late` (outside the time/grace window) and `rejected_invalid` (unknown question, option id not belonging to that question, wrong shape or too long) are **permanent** - the client drops the item from its outbox and shows a message; only network errors and 5xx responses are retried.
 
 **Submit** `POST /api/attempts/:id/submit` -> `{ "status": "SUBMITTED", "submittedAt": "..." }` - safe to call repeatedly (idempotent).
 
-**Heartbeat** `POST /api/attempts/:id/heartbeat` -> `{ "serverNow", "expiresAt", "announcements": [ ...new since last ] }`
+**Heartbeat** `POST /api/attempts/:id/heartbeat` (optional body `{ "sinceAnnouncementAt": "<ISO>" }` = newest announcement the client has seen) -> `{ "serverNow", "expiresAt", "announcements": [ ...with at > sinceAnnouncementAt (all if omitted) ] }`. The client, not the server, tracks what it has seen, so an announcement is never lost when a heartbeat response is dropped.
 
 **Incident** `POST /api/attempts/:id/incidents` body `{ "type": "TAB_HIDDEN", "meta": { "durationMs": 4200 } }`
 
