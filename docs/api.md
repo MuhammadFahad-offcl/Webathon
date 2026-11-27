@@ -269,6 +269,8 @@ Grouping: **available** = `OPEN`, `IN_PROGRESS`; **upcoming** = `UPCOMING`; **co
 
 ## 11. Attempts
 
+**Access for 11.2-11.6:** the attempt owner, whether the attempt is live or sandbox. The guard is `requireRole("CANDIDATE", "EXAMINER")`; a different `userId` -> `404`; a role that does not match the attempt (`isSandbox` -> EXAMINER, otherwise CANDIDATE) -> `403`.
+
 ### 11.1 `POST /api/exams/:id/attempts` - start or resume
 Request: `{ "sandbox": false }` (body optional; `sandbox` defaults to `false`).
 Response: `201 { "attemptId": "...", "resumed": false }` when created, `200 { "attemptId": "...", "resumed": true }` when an in-progress attempt is returned.
@@ -316,7 +318,7 @@ Per-item `status`:
 | `rejected_late` | Outside the time or grace window, or attempt already finalized | Permanent: drop, tell the candidate |
 | `rejected_invalid` | Unknown question, option id not in that question, wrong shape or too long | Permanent: drop, show an error |
 
-Time rule: accepted if `now <= expiresAt`; accepted as a **late sync** if `now <= expiresAt + GRACE_MS` and `elapsedMs <= durationMin * 60000` (increments `lateSyncCount`, records a `LATE_SYNC` incident); otherwise `rejected_late`. A request body that is structurally invalid is `400`; item-level problems never fail the batch.
+Time rule: accepted if `now <= expiresAt`; accepted as a **late sync** if `now <= expiresAt + GRACE_MS` and `elapsedMs <= expiresAt - startedAt` in ms (increments `lateSyncCount`, records a `LATE_SYNC` incident); otherwise `rejected_late`. A request body that is structurally invalid is `400`; item-level problems never fail the batch.
 
 ### 11.4 `POST /api/attempts/:id/submit`
 Finalizes immediately (does not wait for the grace window). Idempotent: a repeat returns the current state.

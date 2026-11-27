@@ -35,7 +35,7 @@ Related: [api.md](api.md) (every endpoint used here), [architecture.md](architec
 | `/examiner/exams/[id]/sandbox/[attemptId]` | EXAMINER | M2 | Sandbox preview using M3's workspace |
 | `/verify/[code]` | public | M2 | Result verification page |
 
-Route groups in the filesystem (`(auth)`, `(candidate)`, `(admin)`, `(examiner)`) share layouts without affecting URLs. `middleware.ts` provides the coarse URL guard (see architecture.md section 5.2); each page also handles a 401/403 from the API by redirecting to `/login` or showing a "not allowed" state.
+Route groups in the filesystem (`(auth)`, `(candidate)`, `(admin)`, `(examiner)`) share layouts without affecting URLs. `proxy.ts` provides the coarse URL guard (see architecture.md section 5.2); each page also handles a 401/403 from the API by redirecting to `/login` or showing a "not allowed" state.
 
 ---
 

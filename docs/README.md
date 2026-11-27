@@ -15,4 +15,13 @@ Web-e-Thon, Technoverse 5.0 (COMSATS University Lahore, 27-28 Nov 2026). Team of
 | [systemdesign.md](systemdesign.md) | Requirements traceability, flows, state machines, concurrency, failure modes, security, scaling |
 | [schema.prisma](schema.prisma) | Database schema (Prisma 6). Copy to `prisma/schema.prisma` in the app |
 
+## Doc updates, 27 Nov 2026 (all members please read)
+
+| Change | Affects | Details |
+|---|---|---|
+| Late sync now checks `elapsedMs <= expiresAt - startedAt`, not the exam duration (a late starter could otherwise have answers written after expiry accepted) | M1, M3 | Contract section 7 |
+| Attempt endpoints must allow the examiner's own sandbox attempt, not only `CANDIDATE` | M1, M2 | Contract section 4 |
+| Folder ownership completed: `answers`, `candidates`, `verify` and `attempts/[id]/review` are M2; `candidate` and `proxy.ts` are M1 | M1, M2 | Contract section 3 |
+| Setup creates the app at the repo root; `proxy.ts` replaces `middleware.ts` (Next.js 16); no `tailwind.config` (Tailwind 4) | Everyone | Contract section 2 |
+
 Note: pin Prisma to v6 (`npm i prisma@6 @prisma/client@6`); the latest npm tag is v8 (RC) and rejects `url`/`directUrl` in the schema file.

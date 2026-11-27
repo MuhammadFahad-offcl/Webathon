@@ -23,18 +23,28 @@
 
 ## 2. Setup (do together in the first 45 minutes)
 
+**One member** creates the app, once, from the root of the cloned repo, then commits and pushes. The app lives at the repo root, next to `docs/`. On Windows use Git Bash.
+
 ```bash
-npx create-next-app@latest examsys --ts --tailwind --app --eslint --no-src-dir --import-alias "@/*" --use-npm
-cd examsys
+npx create-next-app@16 examsys --ts --tailwind --app --eslint --no-src-dir --import-alias "@/*" --use-npm --disable-git --skip-install --yes
+cp -a examsys/. . && rm -rf examsys     # move the app (including dotfiles) to the repo root
+npm install
 # IMPORTANT: pin Prisma to v6. `npm i prisma` now installs v8 (release candidate), which rejects
 # `url` / `directUrl` inside schema.prisma and needs a different setup (prisma.config.ts + driver adapters).
 npm i prisma@6 @prisma/client@6
 npm i zod bcryptjs jose @tanstack/react-query react-hook-form @hookform/resolvers recharts idb papaparse pdf-lib qrcode
 npm i -D @types/bcryptjs @types/papaparse tsx vitest
 npx shadcn@latest init
-# copy prisma/schema.prisma from this pack, then:
+mkdir -p prisma && cp docs/schema.prisma prisma/schema.prisma
+# create .env (below), then:
 npx prisma migrate dev --name init
 ```
+Everyone else: `git pull`, `npm install`, create `.env`, `npx prisma generate`.
+
+**Version notes (Next.js 16, Tailwind 4):**
+- `middleware.ts` is deprecated. Use `proxy.ts` at the repo root, exporting a function named `proxy`. It runs on the Node.js runtime.
+- Tailwind 4 creates no `tailwind.config` file by default; theme tokens go in `globals.css`.
+
 Add to `package.json`: `"prisma": { "seed": "tsx prisma/seed.ts" }` so `npx prisma db seed` works, and `"postinstall": "prisma generate"` so Vercel builds generate the client.
 
 Tell everyone to install with the same lockfile (commit `package-lock.json`) so nobody ends up on a different Prisma version.
@@ -57,13 +67,16 @@ lib/auth/  lib/services/        M1   (core engine: attempts, grading, lifecycle)
 lib/validation/                 shared - add files, don't rewrite others'
 lib/offline/                    M3
 lib/reports/                    M2   (PDF, QR, analytics queries)
-app/api/auth|attempts|results   M1
+proxy.ts                        M1
+app/api/auth|attempts|candidate|results   M1  (except app/api/attempts/[id]/review = M2)
 app/api/me/route.ts             M1   (GET /api/me)   |  app/api/me/preferences/route.ts   M3
 app/api/exams/[id]/attempts, app/api/exams/[id]/results/publish   M1  (everything else under app/api/exams = M2)
 app/api/users|exams|questions|import|reports|analytics|announcements|monitor   M2
+app/api/answers|candidates|verify, app/api/attempts/[id]/review   M2  (candidate = M1, candidates = M2)
 app/(auth)  app/(candidate)     M3
 app/(admin)  app/(examiner)     M2
-components/ui  app/layout.tsx  globals.css  tailwind config   M3 (design system)
+app/verify/[code]               M2
+components/ui  app/layout.tsx  globals.css   M3 (design system)
 components/examiner/            M2
 ```
 
@@ -90,7 +103,12 @@ requireRole(...roles: Role[]): Promise<{ userId, role }>   // throws 401/403; re
 assertExamOwner(examId, userId, role)                       // examiner owns exam, admins pass
 assertEnrolled(examId, userId)
 ```
-**Every API route must call `requireRole` first.** Hiding buttons is never enough.
+**Every API route must call `requireRole` first** (only `login` and public verify are exempt). Hiding buttons is never enough.
+
+**Attempt endpoints serve live and sandbox attempts** (`GET /api/attempts/:id`, answers, submit, heartbeat, incidents). Do not restrict them to `CANDIDATE`, or the examiner's sandbox preview cannot load or save. In order:
+1. `requireRole("CANDIDATE", "EXAMINER")`
+2. Load the attempt; `userId` must equal the session user, else 404.
+3. The role must match the attempt: `isSandbox` -> `EXAMINER`, otherwise `CANDIDATE`; else 403.
 
 **Never leak:** `Option.isCorrect`, `AttemptQuestion.snapshot.options[].isCorrect`, `passwordHash`, other users' results. Candidate payloads go through a `toCandidateQuestion()` mapper (M1) that strips answer keys.
 
@@ -197,7 +215,7 @@ Rules the whole team must respect:
 1. `expiresAt` is fixed at attempt start and never extended - disconnects do NOT pause the clock.
 2. Client writes every answer change to an **IndexedDB outbox** first, then sends it. Outbox drains on reconnect, in `seq` order.
 3. Server ignores any `seq <= stored seq` for that answer (idempotent, out-of-order safe).
-4. **Late sync:** answers arriving after `expiresAt` are accepted only inside a grace window of **120 seconds** (`GRACE_MS = 120_000`, one constant in `lib/constants.ts`), and only if the item's `elapsedMs <= durationMin*60000`. Accepted late syncs increment `Attempt.lateSyncCount` and create a `LATE_SYNC` incident for examiner review.
+4. **Late sync:** answers arriving after `expiresAt` are accepted only inside a grace window of **120 seconds** (`GRACE_MS = 120_000`, one constant in `lib/constants.ts`), and only if the item's `elapsedMs <= expiresAt - startedAt` (in ms: the time this attempt actually had). Do **not** compare with `durationMin`: a late starter's `expiresAt` is capped by `exam.endAt`, so that check would accept answers written after expiry. Accepted late syncs increment `Attempt.lateSyncCount` and create a `LATE_SYNC` incident for examiner review.
    **Important - lazy finalization must respect the grace window:** an attempt stays `IN_PROGRESS` until `expiresAt + GRACE_MS`. `finalizeIfExpired` only finalizes when `now > expiresAt + GRACE_MS` (an explicit `submit` always finalizes immediately). While `expiresAt < now <= expiresAt + GRACE_MS`, `GET /api/attempts/:id` returns `remainingMs: 0` and `inGrace: true`, and the UI shows the exam as ended (inputs locked) but still flushes the outbox. Otherwise a reconnecting candidate's buffered answers would be rejected because the attempt was already finalized.
    Seq numbering: client `seq` starts at 1 per question and increases on every change; the server's stored `Answer.seq` starts at 0.
 5. Refresh/crash -> `GET /api/attempts/:id` restores saved answers and remaining time; local outbox is merged on top.

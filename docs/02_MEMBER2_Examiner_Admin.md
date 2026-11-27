@@ -15,6 +15,8 @@ app/(admin)/*                  admin pages
 app/(examiner)/*               examiner pages
 components/examiner/*          tables, forms, charts, monitor widgets
 app/api/users|exams|questions|import|announcements|monitor|analytics|reports
+app/api/answers|candidates|verify
+app/api/attempts/[id]/review   (the rest of app/api/attempts is M1's)
 app/verify/[code]              public verification page
 lib/reports/*                  PDF generation, QR, analytics queries
 lib/validation/*               zod schemas for your endpoints

@@ -305,7 +305,7 @@ on unique violation (two tabs started at once): re-read and return the existing 
 ### 7.2 Save one answer (per item)
 ```
 if now <= expiresAt                          -> accepted
-elif now <= expiresAt + GRACE_MS and elapsedMs <= durationMin*60000
+elif now <= expiresAt + GRACE_MS and elapsedMs <= (expiresAt - startedAt) in ms
                                              -> accepted as late sync (lateSyncCount++, LATE_SYNC incident)
 else                                         -> rejected_late
 validate response against the snapshot       -> else rejected_invalid

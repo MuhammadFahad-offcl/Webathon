@@ -17,7 +17,8 @@ lib/services/*                 examLifecycle, attemptService, gradingService, re
 lib/validation/*               zod schemas for your endpoints
 app/api/auth/*  app/api/me
 app/api/candidate/*
-app/api/attempts/*
+app/api/attempts/*             except [id]/review (M2)
+proxy.ts
 app/api/exams/[id]/attempts, app/api/exams/[id]/results/publish
 Deployment (Vercel + Neon), env vars, README
 ```
@@ -29,7 +30,7 @@ Deployment (Vercel + Neon), env vars, README
 - [ ] Auth: login/logout/`GET /api/me`. Passwords hashed with bcrypt/argon2. Session in httpOnly + Secure + SameSite=Lax cookie (signed JWT via `jose`, or Auth.js).
 - [ ] Rate-limit login (simple in-memory or DB counter per email+IP is enough).
 - [ ] `requireRole`, `assertExamOwner`, `assertEnrolled` helpers, with consistent 401/403 error format. `requireRole` re-reads the user's role and `active` flag from the DB on each call (one cheap query) so deactivated users and role changes take effect immediately. Wrong role -> 403; someone else's resource -> 404.
-- [ ] Next.js `middleware.ts` for coarse route protection (e.g. `/admin/*` needs ADMIN) **plus** real checks inside every API route.
+- [ ] Next.js `proxy.ts` (formerly `middleware.ts`) for coarse route protection (e.g. `/admin/*` needs ADMIN) **plus** real checks inside every API route.
 - [ ] Shared `apiHandler()` wrapper that catches errors, maps Zod errors -> 400 `VALIDATION_ERROR`, unknown errors -> 500 without leaking stack traces.
 - [ ] Message to the team: "Auth + seed are live on main."
 
@@ -45,10 +46,11 @@ Deployment (Vercel + Neon), env vars, README
   - Otherwise creates the attempt in a **transaction**: `expiresAt = min(now + durationMin, exam.endAt)`; build `AttemptQuestion` rows, shuffling question order and option order if the exam settings say so, storing the full snapshot (text, options with `isCorrect`, marks, scheme) in `AttemptQuestion.snapshot`.
   - Unique `(examId,userId,sandboxRun=0)` prevents duplicates; catch the unique-violation and return the existing attempt.
   - `sandbox: true` (EXAMINER of that exam only): `isSandbox=true`, `sandboxRun = next integer`; skips the enrollment, exam-status (DRAFT allowed), window and results-published checks and uses `expiresAt = now + durationMin`.
+- [ ] Guard for all `/api/attempts/:id` candidate endpoints (load, answers, submit, heartbeat, incidents): `requireRole("CANDIDATE", "EXAMINER")`, owner check (404), then role must match the attempt (`isSandbox` -> EXAMINER, otherwise CANDIDATE; 403). See contract section 4.
 - [ ] `GET /api/attempts/:id`: owner only; return the shape in the contract; use `toCandidateQuestion()` to **strip answer keys**; include `serverNow`, saved answers, announcements. **Run lazy finalization first** (below).
 - [ ] `PUT /api/attempts/:id/answers` (batch):
   - Reject if attempt not IN_PROGRESS.
-  - If `now <= expiresAt`: accept. If `now <= expiresAt + GRACE_MS` AND `elapsedMs <= duration`: accept as late sync (`lateSyncCount++`, create `LATE_SYNC` incident). Else `rejected_late`.
+  - If `now <= expiresAt`: accept. If `now <= expiresAt + GRACE_MS` AND `elapsedMs <= expiresAt - startedAt` (not `durationMin`; see contract section 7): accept as late sync (`lateSyncCount++`, create `LATE_SYNC` incident). Else `rejected_late`.
   - Call `finalizeIfExpired` first (it only finalizes after the grace window, see below); if the attempt is already finalized, every item returns `rejected_late`.
   - Per item: validate response shape against question type (option ids must belong to that question; MCQ max 1 option; WRITTEN text max length e.g. 20k chars). Invalid items return `rejected_invalid` and never fail the rest of the batch.
   - Upsert `Answer` only if incoming `seq > stored seq` (else `ignored_stale`).

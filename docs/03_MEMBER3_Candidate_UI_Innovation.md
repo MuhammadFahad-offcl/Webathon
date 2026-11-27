@@ -11,7 +11,7 @@
 ## You own
 
 ```
-app/layout.tsx, globals.css, tailwind.config, components/ui/*   design system + app shell
+app/layout.tsx, globals.css, components/ui/*   design system + app shell (Tailwind 4: tokens in globals.css)
 app/(auth)/*                   login page
 app/(candidate)/*              dashboard, exam workspace, results
 components/candidate/*         palette, timer, question card, status chip, scratchpad

@@ -146,7 +146,7 @@ Timeline of one attempt (times relative to `expiresAt`):
 |---|---|---|
 | Before `expiresAt` | Accepts answers normally | Normal workspace |
 | `expiresAt` reached | Attempt stays `IN_PROGRESS`; `remainingMs = 0`, `inGrace = true` | Inputs locked; flush outbox, then call submit |
-| `expiresAt` to `expiresAt + 120 s` | Accepts buffered answers only if `elapsedMs <= duration`; counts them as late syncs and records `LATE_SYNC` | Keeps retrying flush and submit if offline |
+| `expiresAt` to `expiresAt + 120 s` | Accepts buffered answers only if `elapsedMs <= expiresAt - startedAt`; counts them as late syncs and records `LATE_SYNC` | Keeps retrying flush and submit if offline |
 | Candidate submits at any time | Finalizes immediately (idempotent) | Shows "Submitted" |
 | After `expiresAt + 120 s` | Next access finalizes the attempt with answers already accepted; further items are `rejected_late` | Shows "finalized with the answers saved before time ran out" |
 
@@ -243,7 +243,7 @@ Isolation level is PostgreSQL's default (Read Committed); correctness comes from
 **Solution.**
 1. **Device-first saving.** Every change is written to IndexedDB before any network call; the outbox drains when connectivity returns, idempotently (per-answer `seq`).
 2. **Server-authoritative clock.** `expiresAt` is fixed in the database at start. Disconnecting neither pauses nor extends it; the UI says so.
-3. **Bounded late sync.** Answers that could not be delivered are accepted for a short grace window after expiry, but only if the client-reported `elapsedMs` (measured on a server-calibrated clock) shows they were produced within the allowed duration. Each such acceptance is counted and logged as `LATE_SYNC` for the examiner.
+3. **Bounded late sync.** Answers that could not be delivered are accepted for a short grace window after expiry, but only if the client-reported `elapsedMs` (measured on a server-calibrated clock) shows they were produced within the time this attempt actually had (`expiresAt - startedAt`, which is shorter than the exam duration for a late starter). Each such acceptance is counted and logged as `LATE_SYNC` for the examiner.
 4. **Resume anywhere.** Refresh, crash or switching device resumes the same attempt with the same remaining time (the start endpoint returns the in-progress attempt). Answers already synced survive even if the original device is lost; unsynced answers on a dead device are the only loss.
 5. **Honest UI.** Save status, connection state and offline notices are always visible.
 
@@ -284,7 +284,7 @@ Answer keys, candidate answers and scores, user credentials, exam schedules, res
 | Threat | Mitigation |
 |---|---|
 | Candidate reads answer keys from API responses or the page | Keys exist only server-side; candidate payloads built by `toCandidateQuestion()`; PDFs and the verify page contain no keys; grep sweep before release |
-| Candidate calls examiner/admin endpoints | `requireRole` on every route; middleware is only a coarse extra layer |
+| Candidate calls examiner/admin endpoints | `requireRole` on every route; `proxy.ts` is only a coarse extra layer |
 | Accessing another user's attempt or result by guessing an ID | Ownership check on every route; foreign resources return 404 |
 | Privilege escalation by sending `role` or other fields | Strict Zod schemas reject unknown keys; role changes only through the admin endpoint |
 | Time tampering | Server time and stored `expiresAt`; late items bounded by the grace window |

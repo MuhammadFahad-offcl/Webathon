@@ -33,7 +33,7 @@ flowchart LR
   end
 
   subgraph Vercel["Vercel: one Next.js app"]
-    MW["middleware.ts: coarse route guard"]
+    MW["proxy.ts: coarse route guard"]
     PG["Pages: app/(role)/..."]
     RH["Route Handlers: app/api/..."]
     SV["Services: lib/services"]
@@ -62,7 +62,7 @@ One deployable unit (the Next.js app) talks to one database. There is no separat
 
 ```
 HTTP request
-  -> middleware.ts            coarse: is there a valid session cookie? is this URL allowed for this role?
+  -> proxy.ts                 coarse: is there a valid session cookie? is this URL allowed for this role?
   -> Route Handler            thin: parse request, call guard, validate, call service, shape response
   -> apiHandler() wrapper     catches errors -> consistent JSON error format
   -> Guard (lib/auth)         requireRole / assertExamOwner / assertEnrolled
@@ -94,9 +94,9 @@ app/
   verify/[code]/                      M2   public verification page
   api/
     auth/  me/                        M1   (me/preferences: M3)
-    candidate/  attempts/             M1
+    candidate/  attempts/             M1   (attempts/[id]/review: M2)
     exams/[id]/attempts, results/publish   M1
-    users/ exams/ questions/ import/ candidates/ announcements/ monitor/ analytics/ reports/ verify/   M2
+    users/ exams/ questions/ import/ candidates/ answers/ announcements/ monitor/ analytics/ reports/ verify/   M2
 lib/
   auth/        M1   session, hashing, guards
   services/    M1   examLifecycle, attemptService, gradingService, resultService
@@ -109,6 +109,7 @@ components/
   candidate/   M3
   examiner/    M2
 prisma/        M1   schema.prisma, migrations, seed.ts
+proxy.ts       M1   coarse route guard
 ```
 
 The ownership column is the merge-conflict strategy from the shared contract.
@@ -119,10 +120,10 @@ The ownership column is the merge-conflict strategy from the shared contract.
 
 `PUT /api/attempts/:id/answers` (autosave):
 
-1. **middleware.ts** - checks the session cookie signature (`jose`, edge-safe). No cookie -> 401. It does not decide permissions beyond coarse URL prefixes.
+1. **proxy.ts** - checks the session cookie signature (`jose`). No cookie -> 401. It does not decide permissions beyond coarse URL prefixes.
 2. **Route handler** wrapped by `apiHandler()`.
-3. **`requireRole("CANDIDATE")`** - loads the user from the DB, confirms `active` and the role. Failure -> 401/403.
-4. **Ownership** - loads the attempt and confirms `attempt.userId === session.userId`. Failure -> **404** (existence not revealed).
+3. **`requireRole("CANDIDATE", "EXAMINER")`** - loads the user from the DB, confirms `active` and the role. Failure -> 401/403. Examiners are allowed because sandbox attempts use the same endpoint.
+4. **Ownership** - loads the attempt and confirms `attempt.userId === session.userId`. Failure -> **404** (existence not revealed). Then the role must match the attempt (`isSandbox` -> EXAMINER, otherwise CANDIDATE) -> else 403.
 5. **Zod** validates the body shape (`items[]`, sizes, types). Failure -> 400 `VALIDATION_ERROR`.
 6. **`attemptService.saveAnswers()`**:
    - `finalizeIfExpired` (only finalizes after the grace window).
@@ -138,14 +139,14 @@ Any thrown `AppError` becomes `{ "error": { "code", "message", "fields?", "detai
 ### 5.1 Authentication and sessions
 - Email + password login. Passwords hashed with bcrypt (`bcryptjs`) or argon2; never logged or returned.
 - On success the server sets a **signed JWT** (via `jose`) in an `httpOnly; Secure; SameSite=Lax` cookie containing `userId` and `role`. Default lifetime 12 hours.
-- `middleware.ts` runs on the Edge runtime: use `jose` there. **`bcryptjs` is only called inside route handlers**, never in middleware.
+- `proxy.ts` (Next.js 16's replacement for `middleware.ts`) runs on the Node.js runtime and verifies the cookie with `jose`. Keep it light: no database queries, and **`bcryptjs` is only called inside route handlers**.
 - Login is rate-limited (see section 6).
 - Responses to a failed login are identical for unknown email, wrong password and deactivated account ("Invalid email or password") so the endpoint does not reveal which accounts exist.
 
 ### 5.2 Authorization
 Two layers, with the second one authoritative:
 
-1. `middleware.ts` - coarse URL guard. `/admin/*` needs ADMIN; `/examiner/*` needs EXAMINER or ADMIN; candidate pages need CANDIDATE; `/login` and `/verify/*` are public.
+1. `proxy.ts` - coarse URL guard. `/admin/*` needs ADMIN; `/examiner/*` needs EXAMINER or ADMIN; candidate pages need CANDIDATE; `/login` and `/verify/*` are public.
 2. **Per-route guards** - `requireRole` on every API route, then ownership checks.
 
 `requireRole` re-reads the user row on each call, so deactivating a user or changing a role takes effect immediately even if that user still holds a valid cookie.
@@ -224,7 +225,7 @@ One file, imported by services and the client where relevant. Values are default
 | D5 | Exam phase **derived** from schedule, not stored | Store ONGOING/COMPLETED and update with a job | No background worker on serverless; no stale status | Phase computed on every read |
 | D6 | **Lazy finalization** of expired attempts, after a grace window | Cron / queue worker | No worker needed; correctness does not depend on a scheduler | Finalization happens on next access; results publish step forces it for all attempts |
 | D7 | Client **outbox** (IndexedDB) + per-answer `seq` | Send-and-pray fetch | Survives refresh, offline, reorder, duplicates (G5) | More client complexity |
-| D8 | Late answers accepted only inside a 2-minute grace window and only if `elapsedMs <= duration` | Reject everything after expiry; or extend time on disconnect | Does not punish honest outages, never grants extra time | `elapsedMs` is client-reported (see [systemdesign.md](systemdesign.md) section 8) |
+| D8 | Late answers accepted only inside a 2-minute grace window and only if `elapsedMs <= expiresAt - startedAt` | Reject everything after expiry; or extend time on disconnect | Does not punish honest outages, never grants extra time | `elapsedMs` is client-reported (see [systemdesign.md](systemdesign.md) section 8) |
 | D9 | Wrong role -> 403, other's resource -> 404 | Always 403 | Avoids confirming that another candidate's attempt exists | Slightly less specific error for legitimate bugs |
 | D10 | Questions are scoped to their creating examiner | Shared bank across all examiners | Answer keys are not exposed to every examiner | Examiners cannot reuse each other's questions without an admin or re-import |
 | D11 | Integrity signals are indicators only, minimal data | Webcam / screen recording / keystroke logging | Meets "without compromising privacy" (5.1) and avoids false accusations | Weaker deterrent |
@@ -261,7 +262,7 @@ flowchart LR
 | Level | What | Owner | Tooling |
 |---|---|---|---|
 | Unit | `gradeObjective` (about 12 cases: MCQ right/wrong/negative/unanswered, MULTI all-or-nothing, MULTI partial, floors at zero) | M1 | Vitest |
-| Unit | `deriveExamPhase`, time-window checks incl. grace boundary (`expiresAt`, `expiresAt + GRACE_MS`) | M1 | Vitest |
+| Unit | `deriveExamPhase`, time-window checks incl. grace boundary (`expiresAt`, `expiresAt + GRACE_MS`) and a late starter capped by `exam.endAt` | M1 | Vitest |
 | Authorization | Candidate A cannot read B's attempt/result; examiner cannot touch another's exam; candidate cannot call examiner endpoints | M1 + M2 | curl / small script |
 | Concurrency | 5 parallel submits and 10 parallel autosaves on one attempt: no duplicates, no 500s | M1 | script |
 | Data leak sweep | Search all candidate-facing responses and PDFs for `isCorrect`, `passwordHash`, other users' data | M1 + M2 | grep + manual |
