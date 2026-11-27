@@ -45,6 +45,7 @@ export async function call<T = any>( // eslint-disable-line @typescript-eslint/n
   const request = new Request(`http://test.local${options.path ?? "/"}`, init);
   const response = await handler(request, { params: Promise.resolve(options.params ?? {}) });
   const text = await response.text();
+  if (response.status >= 500) console.error(`[call] ${init.method} ${options.path ?? "/"} -> ${response.status} ${text}`);
   return { status: response.status, body: text ? JSON.parse(text) : null };
 }
 

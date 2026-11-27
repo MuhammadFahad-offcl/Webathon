@@ -101,9 +101,16 @@ describe("list users", () => {
   it("filters by search, role and active, and paginates", async () => {
     actAs(admin.id);
     const tag = `zz${Date.now()}`;
-    for (let i = 0; i < 3; i++) await makeUser(Role.CANDIDATE, { name: `${tag} cand ${i}` });
-    await makeUser(Role.EXAMINER, { name: `${tag} exam` });
-    await makeUser(Role.CANDIDATE, { name: `${tag} off`, active: false });
+    const rows: { name: string; role: Role; active: boolean }[] = [
+      { name: `${tag} cand 0`, role: Role.CANDIDATE, active: true },
+      { name: `${tag} cand 1`, role: Role.CANDIDATE, active: true },
+      { name: `${tag} cand 2`, role: Role.CANDIDATE, active: true },
+      { name: `${tag} exam`, role: Role.EXAMINER, active: true },
+      { name: `${tag} off`, role: Role.CANDIDATE, active: false },
+    ];
+    await prisma.user.createMany({
+      data: rows.map((row) => ({ ...row, email: testEmail("list"), passwordHash: "not-a-real-hash" })),
+    });
 
     const page1 = await call(listUsers, { path: `/api/users?search=${tag}&role=CANDIDATE&active=true&pageSize=2` });
     expect(page1.status).toBe(200);

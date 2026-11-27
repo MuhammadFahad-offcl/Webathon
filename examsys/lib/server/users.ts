@@ -164,6 +164,7 @@ export async function updateUser(
       });
       return toUserDto(user);
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    // Prisma's default 5s limit is too tight on a slow link (~6 round trips here).
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 20_000 },
   );
 }
