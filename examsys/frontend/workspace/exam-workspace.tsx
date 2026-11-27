@@ -19,6 +19,9 @@ import { ErrorState } from "@/frontend/components/ui/error-state";
 import { Skeleton } from "@/frontend/components/ui/skeleton";
 import { QuestionCard } from "@/frontend/workspace/question-card";
 import { QuestionPalette } from "@/frontend/workspace/question-palette";
+import { useWorkspacePreferences } from "@/frontend/workspace/use-workspace-preferences";
+import { WorkspacePreferences } from "@/frontend/workspace/workspace-preferences";
+import { WorkspaceScratchpad } from "@/frontend/workspace/workspace-scratchpad";
 import {
   initialWorkspaceState,
   type Announcement,
@@ -100,12 +103,20 @@ export function ExamWorkspace({ attemptId, mode = "live" }: Readonly<Props>) {
   const [storageReady, setStorageReady] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [scratchpadOpen, setScratchpadOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [incidentError, setIncidentError] = useState<string | null>(null);
   const [timerAnnouncement, setTimerAnnouncement] = useState("");
   const [timerWarning, setTimerWarning] = useState<string | null>(null);
+  const {
+    preferences,
+    updatePreferences,
+    loaded: preferencesLoaded,
+    saveState: preferencesSaveState,
+    error: preferencesError,
+  } = useWorkspacePreferences();
 
   const clockRef = useRef<ClockAnchor | null>(null);
   const answersRef = useRef<Record<string, AttemptAnswer>>({});
@@ -702,7 +713,9 @@ export function ExamWorkspace({ attemptId, mode = "live" }: Readonly<Props>) {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target;
       if (target instanceof HTMLElement && (
-        target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName)
+        target.closest("dialog") ||
+        target.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName)
       )) return;
       if (event.key === "ArrowRight" || event.key.toLowerCase() === "n") {
         event.preventDefault();
@@ -717,6 +730,9 @@ export function ExamWorkspace({ attemptId, mode = "live" }: Readonly<Props>) {
           const answer = answersRef.current[question.id];
           void recordAnswer(question, answer?.response ?? answerResponse(question), !(answer?.flagged ?? false));
         }
+      } else if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        setScratchpadOpen((open) => !open);
       } else if (/^[1-9]$/.test(event.key) && writableRef.current && storageReadyRef.current) {
         const question = state.questions[state.currentIndex];
         const option = question?.options[Number(event.key) - 1];
@@ -863,6 +879,21 @@ export function ExamWorkspace({ attemptId, mode = "live" }: Readonly<Props>) {
             </time>
           </div>
           {renderSaveStatus()}
+          <Button
+            variant="secondary"
+            type="button"
+            aria-pressed={scratchpadOpen}
+            onClick={() => setScratchpadOpen(true)}
+          >
+            Scratchpad
+          </Button>
+          <WorkspacePreferences
+            preferences={preferences}
+            loaded={preferencesLoaded}
+            saveState={preferencesSaveState}
+            error={preferencesError}
+            onChange={updatePreferences}
+          />
           <button className="button-primary" type="button" onClick={() => setReviewOpen(true)} disabled={state.attempt.status !== "IN_PROGRESS"}>
             Review & submit
           </button>
@@ -896,7 +927,7 @@ export function ExamWorkspace({ attemptId, mode = "live" }: Readonly<Props>) {
         <p className="sr-only" aria-live="polite" aria-atomic="true">{timerAnnouncement}</p>
         {timerWarning && <p className="workspace-timer-warning" role="status">{timerWarning}</p>}
 
-        <div className="workspace-grid">
+        <div className={`workspace-grid palette-${preferences.palettePosition}`}>
           <div className="workspace-question-column" id="question-content">
             {currentQuestion && (
               <QuestionCard
@@ -921,11 +952,18 @@ export function ExamWorkspace({ attemptId, mode = "live" }: Readonly<Props>) {
               currentIndex={state.currentIndex}
               onSelect={jumpTo}
             />
+            <WorkspaceScratchpad
+              key={attemptId}
+              attemptId={attemptId}
+              open={scratchpadOpen}
+              onToggle={() => setScratchpadOpen((open) => !open)}
+            />
             <section className="workspace-shortcuts page-surface">
               <h2 className="font-bold">Keyboard shortcuts</h2>
               <ul className="mt-3 grid gap-2 text-sm text-muted">
                 <li><kbd>←</kbd> / <kbd>P</kbd> Previous · <kbd>→</kbd> / <kbd>N</kbd> Next</li>
                 <li><kbd>F</kbd> Mark for review</li>
+                <li><kbd>S</kbd> Toggle scratchpad</li>
                 <li><kbd>1–9</kbd> Select an option</li>
               </ul>
             </section>
