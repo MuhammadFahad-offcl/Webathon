@@ -15,7 +15,7 @@ import type {
   SubmissionItem,
   SubmissionsResponse,
 } from "@/lib/validation/grading";
-// TODO(PR9): import { DownloadExamReportButton, DownloadReportButton } from "@/components/examiner/reports/download-report-button";
+import { DownloadExamReportButton, DownloadReportButton } from "@/components/examiner/reports/download-report-button";
 
 type SortKey = "name" | "score";
 type Sort = { key: SortKey; dir: "asc" | "desc" };
@@ -114,7 +114,8 @@ export function ResultsTab({ exam, reload: reloadExam }: Readonly<ExamTabProps>)
               <strong>Results published</strong> on {formatDateTime(publishedAt)}. Candidates can see their scores, grades are
               locked and the exam is closed to new attempts.
             </span>
-            {/* TODO(PR9): <DownloadExamReportButton examId={exam.id} /> */}
+            <DownloadExamReportButton examId={exam.id} />
+
           </div>
         </Notice>
       ) : (
@@ -258,7 +259,9 @@ export function ResultsTab({ exam, reload: reloadExam }: Readonly<ExamTabProps>)
                   >
                     Review<span className="sr-only"> {item.candidate.name}&apos;s attempt</span>
                   </Link>
-                  {/* TODO(PR9): {item.status === "GRADED" && <DownloadReportButton attemptId={item.attemptId} />} */}
+                  {publishedAt && item.status === "GRADED" && (
+                    <DownloadReportButton attemptId={item.attemptId} label="PDF" />
+                  )}
                 </td>
               </tr>
             ))}

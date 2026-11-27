@@ -344,23 +344,25 @@ Response `201`: `{ "id": "..." }`. Errors: `409 ATTEMPT_CLOSED`, `429 RATE_LIMIT
 ## 12. Monitoring and announcements
 
 ### 12.1 `GET /api/exams/:id/monitor`
-Real attempts only. Triggers lazy finalization for attempts past their grace window.
+EXAMINER (own) or ADMIN; anyone else's exam -> `404`. Real attempts only. Triggers lazy finalization for attempts past their grace window (`expiresAt + GRACE_MS`), so they show as submitted.
+Optional query: `type=<IncidentType>` and/or `attemptId=<id>` filter **only** `recentIncidents` (50 newest; 200 for one attempt). Unknown `type` -> `400`.
 ```json
-{ "serverNow": "...",
+{ "serverNow": "...", "phase": "ONGOING",
   "counts": { "enrolled": 40, "notStarted": 12, "inProgress": 25, "submitted": 3 },
   "attempts": [ { "attemptId": "...", "candidate": { "id": "...", "name": "..." },
                   "status": "IN_PROGRESS", "answered": 14, "total": 30,
-                  "lastHeartbeatAt": "...", "incidentCount": 2, "lateSyncCount": 0 } ],
-  "recentIncidents": [ { "attemptId": "...", "candidateName": "...", "type": "TAB_HIDDEN",
+                  "lastHeartbeatAt": "...", "incidentCount": 2, "lateSyncCount": 0,
+                  "startedAt": "...", "expiresAt": "...", "submittedAt": null } ],
+  "recentIncidents": [ { "id": "...", "attemptId": "...", "candidateName": "...", "type": "TAB_HIDDEN",
                          "at": "...", "meta": { } } ] }
 ```
-`submitted` counts attempts with status `SUBMITTED` or `GRADED`. `answered` counts answers with a non-empty response. Incidents are **indicators for human review, not proof of misconduct**; the UI must say so.
+`submitted` counts attempts with status `SUBMITTED` or `GRADED`. `answered` counts answers with a non-empty response (`optionIds` non-empty or `text` not blank); `total` is the attempt's question count. `attempts` is sorted by candidate name, `recentIncidents` newest first. Online/stale is derived by the client: `serverNow - lastHeartbeatAt < DISCONNECT_GAP_MS`. Incidents are **indicators for human review, not proof of misconduct**; the UI must say so.
 
 ### 12.2 `GET /api/exams/:id/announcements`
-Response `{ "items": [ { "id", "message", "at" } ] }`, newest last. Allowed for the owning examiner and for enrolled candidates.
+Optional query `since=<ISO>` keeps only announcements with `at > since` (invalid -> `400`). Response `{ "items": [ { "id", "message", "at" } ] }`, newest last (same order and fields as the heartbeat). Allowed for the owning examiner, ADMIN and enrolled candidates; a candidate who is not enrolled gets `403 NOT_ENROLLED`, another examiner `404`.
 
 ### 12.3 `POST /api/exams/:id/announcements`
-Request: `{ "message": "Ten minutes remaining" }` (1-500 chars). Exam must be PUBLISHED. Response `201`: `{ "announcement": { "id", "message", "at" } }`.
+EXAMINER (own) or ADMIN. Request: `{ "message": "Ten minutes remaining" }` (1-500 chars after trimming; `400` with `fields.message` otherwise). The exam must be PUBLISHED and not over (phase `UPCOMING` or `ONGOING`, results not published); otherwise `409 CONFLICT`. Response `201`: `{ "announcement": { "id", "message", "at" } }`. Writes an `AuditLog` row (`announcement.create`).
 
 ---
 

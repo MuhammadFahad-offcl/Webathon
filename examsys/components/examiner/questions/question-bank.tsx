@@ -9,6 +9,7 @@ import {
   type QuestionListResponse,
 } from "@/lib/validation/questions";
 import { inputClass, primaryButton, secondaryButton } from "@/components/examiner/users/user-dialog";
+import { ImportDialog } from "@/components/examiner/import/import-dialog";
 import { DeleteQuestionDialog } from "./delete-question-dialog";
 import { QuestionDialog } from "./question-dialog";
 import { TYPE_SHORT, difficultyBadge, label } from "./labels";
@@ -34,6 +35,7 @@ export function QuestionBank() {
     session: 0,
   });
   const [deleting, setDeleting] = useState<QuestionDto | null>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -128,8 +130,7 @@ export function QuestionBank() {
           <p className="text-sm opacity-70">Write, reuse and organise questions for your exams.</p>
         </div>
         <div className="flex gap-2">
-          {/* CSV/JSON import lands here in PR 5. */}
-          <button className={secondaryButton} disabled title="Coming in PR 5" aria-disabled>
+          <button className={secondaryButton} onClick={() => setImporting(true)}>
             Import CSV
           </button>
           <button className={primaryButton} onClick={() => openEditor(null)}>
@@ -342,6 +343,17 @@ export function QuestionBank() {
         }}
         onDuplicate={(question) => void duplicate(question)}
       />
+
+      {importing && (
+        <ImportDialog
+          kind="questions"
+          onClose={() => setImporting(false)}
+          onImported={(report) => {
+            setToast(`Imported ${report.imported} question${report.imported === 1 ? "" : "s"}`);
+            reload();
+          }}
+        />
+      )}
 
       {toast && (
         <div role="status" className="fixed right-4 bottom-4 rounded-md bg-gray-900 px-4 py-3 text-sm text-white shadow-lg">
