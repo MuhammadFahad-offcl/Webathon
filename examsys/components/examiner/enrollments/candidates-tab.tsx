@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { primaryButton } from "@/components/examiner/users/user-dialog";
+import { ImportDialog } from "@/components/examiner/import/import-dialog";
+import { primaryButton, secondaryButton } from "@/components/examiner/users/user-dialog";
 import { ApiClientError, apiFetch } from "@/lib/client/api";
 import type { EnrollmentItem, EnrollmentsResponse } from "@/lib/validation/enrollments";
 import { AddCandidatesPanel } from "./add-candidates-panel";
@@ -18,6 +19,7 @@ export function CandidatesTab({ examId }: Readonly<{ examId: string }>) {
   const [removing, setRemoving] = useState<EnrollmentItem | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const requestKey = `${examId}#${reloadKey}`;
   const loading = settledKey !== requestKey;
@@ -75,11 +77,16 @@ export function CandidatesTab({ examId }: Readonly<{ examId: string }>) {
           <Counter label="In progress" value={counts?.inProgress} />
           <Counter label="Submitted" value={counts?.submitted} />
         </dl>
-        {!adding && (
-          <button type="button" className={primaryButton} onClick={() => setAdding(true)}>
-            + Add candidates
+        <div className="flex gap-2">
+          <button type="button" className={secondaryButton} onClick={() => setImporting(true)}>
+            Import CSV
           </button>
-        )}
+          {!adding && (
+            <button type="button" className={primaryButton} onClick={() => setAdding(true)}>
+              + Add candidates
+            </button>
+          )}
+        </div>
       </div>
 
       {adding && <AddCandidatesPanel examId={examId} onClose={() => setAdding(false)} onAdded={reload} />}
@@ -167,6 +174,18 @@ export function CandidatesTab({ examId }: Readonly<{ examId: string }>) {
         onConfirm={() => void confirmRemove()}
         onClose={() => setRemoving(null)}
       />
+
+      {importing && (
+        <ImportDialog
+          kind="candidates"
+          examId={examId}
+          onClose={() => setImporting(false)}
+          onImported={(report) => {
+            setToast(`Imported ${report.imported} candidate${report.imported === 1 ? "" : "s"}`);
+            reload();
+          }}
+        />
+      )}
 
       {toast && (
         <div role="status" className="fixed right-4 bottom-4 rounded-md bg-gray-900 px-4 py-3 text-sm text-white shadow-lg">
