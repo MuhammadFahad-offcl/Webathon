@@ -1,6 +1,8 @@
 "use client";
 
 import type { ComponentType } from "react";
+import { AnalyticsExamTab } from "@/components/examiner/analytics/analytics-tab";
+import { MonitorTab } from "@/components/examiner/monitor/monitor-tab";
 import type { ExamDetail } from "@/lib/validation/exams";
 import { CandidatesTabSlot } from "./candidates-tab-slot";
 import { DetailsTab } from "./details-tab";
@@ -41,10 +43,10 @@ export const EXAM_TABS: readonly ExamTab[] = [
   { id: "details", label: "Details", Component: DetailsTab },
   { id: "questions", label: "Questions", Component: QuestionsTab },
   { id: "candidates", label: "Candidates", Component: CandidatesTab },
-  { id: "monitor", label: "Monitor", Component: comingSoon("Monitor") },
+  { id: "monitor", label: "Monitor", Component: MonitorTab },
   { id: "grading", label: "Grading", Component: comingSoon("Grading") },
   { id: "results", label: "Results", Component: comingSoon("Results") },
-  { id: "analytics", label: "Analytics", Component: comingSoon("Analytics") },
+  { id: "analytics", label: "Analytics", Component: AnalyticsExamTab },
 ];
 
 export const DEFAULT_EXAM_TAB = EXAM_TABS[0].id;

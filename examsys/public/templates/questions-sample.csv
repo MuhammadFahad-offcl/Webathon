@@ -1,0 +1,8 @@
+topic,difficulty,type,text,marks,optionA,optionB,optionC,optionD,optionE,optionF,correct,negativeMarks,multiScheme
+Networking,EASY,MCQ,At which OSI layer does the IP protocol operate?,2,Transport,Network,Data link,Session,,,B,0.5,
+Networking,MEDIUM,MULTI,Select all transport-layer protocols.,3,TCP,HTTP,UDP,SCTP,FTP,,A;C;D,0,PARTIAL
+Databases,MEDIUM,MULTI,Which of these are ACID properties?,2,Atomicity,Availability,Isolation,Durability,,,A;C;D,,ALL_OR_NOTHING
+Databases,EASY,MCQ,"Which SQL clause filters rows after GROUP BY, using aggregates?",1,WHERE,HAVING,ORDER BY,LIMIT,,,B,,
+Operating Systems,HARD,MCQ,Which scheduling algorithm can cause starvation of long jobs?,2,Round robin,First come first served,Shortest job first,,,,C,0.5,
+Databases,HARD,WRITTEN,"Explain database normalisation up to 3NF, with an example table.",10,,,,,,,,,
+Algorithms,MEDIUM,WRITTEN,Describe how binary search works and state its time complexity.,5,,,,,,,,,
