@@ -1,6 +1,7 @@
 import { ExamStatus, Prisma, QuestionType, Role } from "@prisma/client";
 import { assertExamOwner } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT } from "@/lib/server/attempt-scope";
 import { conflict, notFound, validation } from "@/lib/api/errors";
 import { deriveExamPhase } from "@/lib/services/exam-lifecycle";
 import {
@@ -21,17 +22,15 @@ import {
 /**
  * Exam management for examiners and admins (Member 2, Phase B).
  * Ownership: examiners only ever reach their own exams (others -> 404 via M1's
- * `assertExamOwner`); admins reach all. Every attempt count filters `isSandbox: false`,
+ * `assertExamOwner`); admins reach all. Every attempt count uses the shared `REAL_ATTEMPT` scope,
  * so an examiner's sandbox preview never locks an exam or shows up in a count.
  */
 
 type Session = { userId: string; role: Role };
 
-const REAL_ATTEMPTS = { isSandbox: false } satisfies Prisma.AttemptWhereInput;
-
 const summaryInclude = {
   createdBy: { select: { id: true, name: true } },
-  _count: { select: { questions: true, enrollments: true, attempts: { where: REAL_ATTEMPTS } } },
+  _count: { select: { questions: true, enrollments: true, attempts: { where: REAL_ATTEMPT } } },
 } satisfies Prisma.ExamInclude;
 
 const detailInclude = {
@@ -202,7 +201,7 @@ export async function updateExam(id: string, input: UpdateExamData, session: Ses
 
   const restricted = changed.filter((key) => !(ALWAYS_EDITABLE_FIELDS as readonly string[]).includes(key));
   if (restricted.length > 0) {
-    const attempts = await prisma.attempt.count({ where: { examId: id, ...REAL_ATTEMPTS } });
+    const attempts = await prisma.attempt.count({ where: { examId: id, ...REAL_ATTEMPT } });
     const reason = lockReasonFor(current, attempts, now);
     if (reason) {
       throw conflict(`${reason} Only the title and instructions can be changed now.`, { lockedFields: restricted });
@@ -237,7 +236,7 @@ export async function assignQuestions(id: string, input: AssignQuestionsData, se
   const ids = input.items.map((item) => item.questionId);
 
   const [attempts, questions] = await Promise.all([
-    prisma.attempt.count({ where: { examId: id, ...REAL_ATTEMPTS } }),
+    prisma.attempt.count({ where: { examId: id, ...REAL_ATTEMPT } }),
     ids.length
       ? prisma.question.findMany({ where: { id: { in: ids } }, select: { id: true, createdById: true } })
       : Promise.resolve([]),

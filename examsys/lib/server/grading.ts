@@ -2,6 +2,7 @@ import { AttemptStatus, Prisma, Role } from "@prisma/client";
 import { ApiError, conflict, notFound } from "@/lib/api/errors";
 import { assertExamOwner } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT } from "@/lib/server/attempt-scope";
 import { finalizeIfExpired } from "@/lib/services/attempt-service";
 import { recomputeAttemptScore } from "@/lib/services/result-service";
 import type {
@@ -45,7 +46,7 @@ const iso = (date: Date | null) => (date ? date.toISOString() : null);
 /** Lazily finalizes the exam's real attempts that are past their time + grace window. */
 async function finalizeExpiredAttempts(examId: string) {
   const open = await prisma.attempt.findMany({
-    where: { examId, isSandbox: false, status: AttemptStatus.IN_PROGRESS },
+    where: { examId, ...REAL_ATTEMPT, status: AttemptStatus.IN_PROGRESS },
     select: { id: true },
   });
   await Promise.all(open.map((attempt) => finalizeIfExpired(attempt.id)));
@@ -58,7 +59,7 @@ export async function listSubmissions(examId: string, session: Session): Promise
   await finalizeExpiredAttempts(examId);
 
   const attempts = await prisma.attempt.findMany({
-    where: { examId, isSandbox: false },
+    where: { examId, ...REAL_ATTEMPT },
     select: {
       id: true,
       status: true,
@@ -176,7 +177,7 @@ export async function gradingQueue(examId: string, query: QueueQuery, session: S
   const exam = await assertExamOwner(examId, session.userId, session.role);
   await finalizeExpiredAttempts(examId);
 
-  const finalizedAttempt = { examId, isSandbox: false, status: { in: FINALIZED } } satisfies Prisma.AttemptWhereInput;
+  const finalizedAttempt = { examId, ...REAL_ATTEMPT, status: { in: FINALIZED } } satisfies Prisma.AttemptWhereInput;
   const writtenOfFinalized = {
     attemptQuestion: { ...writtenOnly, attempt: finalizedAttempt },
   } satisfies Prisma.AnswerWhereInput;
@@ -327,7 +328,7 @@ export async function gradeAnswer(answerId: string, input: GradeData, session: S
   const updated = await prisma.answer.updateMany({
     where: {
       id: answerId,
-      attemptQuestion: { attempt: { status: { in: FINALIZED }, exam: { resultsPublishedAt: null } } },
+      attemptQuestion: { attempt: { ...REAL_ATTEMPT, status: { in: FINALIZED }, exam: { resultsPublishedAt: null } } },
     },
     data: {
       awardedMarks: input.awardedMarks,

@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { conflict, notFound } from "@/lib/api/errors";
 import { assertExamOwner } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT } from "@/lib/server/attempt-scope";
 import { deriveExamPhase } from "@/lib/services/exam-lifecycle";
 import type {
   CandidateLookupItem,
@@ -71,7 +72,7 @@ export async function listEnrollments(examId: string, session: Session): Promise
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
     prisma.attempt.findMany({
-      where: { examId, isSandbox: false },
+      where: { examId, ...REAL_ATTEMPT },
       select: { id: true, userId: true, status: true, score: true },
     }),
   ]);
@@ -167,7 +168,7 @@ export async function removeEnrollment(examId: string, userId: string, session: 
 
   const [enrollment, attempt] = await Promise.all([
     prisma.enrollment.findUnique({ where: { examId_userId: { examId, userId } }, select: { id: true } }),
-    prisma.attempt.findFirst({ where: { examId, userId, isSandbox: false }, select: { id: true } }),
+    prisma.attempt.findFirst({ where: { examId, userId, ...REAL_ATTEMPT }, select: { id: true } }),
   ]);
   if (!enrollment) throw notFound("Enrollment");
   if (attempt) throw conflict("This candidate has already started; can't remove");

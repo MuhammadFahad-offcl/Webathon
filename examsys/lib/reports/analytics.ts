@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT } from "@/lib/server/attempt-scope";
 import { notFound } from "@/lib/api/errors";
 import { GRACE_MS, PASS_PERCENT } from "@/lib/constants";
 import { finalizeIfExpired } from "@/lib/services/attempt-service";
@@ -17,7 +18,7 @@ import type {
 /**
  * Exam and question analytics (Member 2, Phase H; docs/api.md section 15, database.md section 9).
  *
- * Population: REAL (`isSandbox: false`) attempts that are finalized (`SUBMITTED` or `GRADED`).
+ * Population: REAL (`REAL_ATTEMPT` scope, `isSandbox: false`) attempts that are finalized (`SUBMITTED` or `GRADED`).
  * In-progress attempts are never counted; expired ones are lazily finalized first, like the
  * monitor does. Written answers still awaiting marks are left out of the correctness numbers.
  *
@@ -371,7 +372,7 @@ export function summarizeQuestions(
  */
 async function finalizeExpired(examId: string): Promise<number> {
   const running = await prisma.attempt.findMany({
-    where: { examId, isSandbox: false, status: "IN_PROGRESS" },
+    where: { examId, ...REAL_ATTEMPT, status: "IN_PROGRESS" },
     select: { id: true, expiresAt: true },
   });
   const cutoff = Date.now() - GRACE_MS;
@@ -395,7 +396,7 @@ async function loadExamData(examId: string) {
       },
     }),
     prisma.attempt.findMany({
-      where: { examId, isSandbox: false, status: { in: ["SUBMITTED", "GRADED"] } },
+      where: { examId, ...REAL_ATTEMPT, status: { in: ["SUBMITTED", "GRADED"] } },
       orderBy: { id: "asc" },
       select: {
         id: true,

@@ -1,5 +1,6 @@
 import { ExamStatus, Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT } from "@/lib/server/attempt-scope";
 import { conflict, notFound } from "@/lib/api/errors";
 import {
   questionInputSchema,
@@ -215,7 +216,7 @@ async function isLocked(
   if (question.examQuestions.some(({ exam }) => exam.status !== ExamStatus.DRAFT)) return true;
   const examIds = question.examQuestions.map(({ exam }) => exam.id);
   if (examIds.length === 0) return false;
-  const attempts = await tx.attempt.count({ where: { examId: { in: examIds }, isSandbox: false } });
+  const attempts = await tx.attempt.count({ where: { examId: { in: examIds }, ...REAL_ATTEMPT } });
   return attempts > 0;
 }
 
