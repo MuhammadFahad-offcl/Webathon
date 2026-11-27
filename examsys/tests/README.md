@@ -17,3 +17,5 @@ If Prisma reports P1001 ("can't reach database server") while the host answers o
 Every row the tests create uses an email ending in `@m2test.local`, and `cleanupTestData()` removes only those rows. The one exception: the "last active admin" test briefly deactivates the other admins and reactivates them in a `finally` block.
 
 Routes use Member 1's real `requireRole(request, ...)`. `actAs(user)` in `tests/helpers.ts` makes the next calls carry a session cookie signed with `SESSION_SECRET` (from `.env.test`, 32+ characters), so authentication is exercised for real, not mocked.
+
+`attempt-concurrency.test.ts` uses this test database to send 10 autosaves and 5 submits concurrently to one attempt, then verifies there are no 5xx responses or duplicate attempt, question, or answer rows.
