@@ -6,6 +6,10 @@ import { importCandidates } from "@/lib/server/import";
 import { readImportRequest } from "@/lib/server/import-file";
 import { examIdSchema, importQuerySchema } from "@/lib/validation/import";
 
+// Hashing each new password (bcrypt cost 12, ~0.3 s per row) dominates a large import:
+// allow up to 5 minutes on platforms that honour it (Vercel), instead of the short default.
+export const maxDuration = 300;
+
 /**
  * POST /api/import/candidates[?dryRun=true]  (EXAMINER, ADMIN)
  * multipart/form-data: file (.csv `name,email,rollNo,password` or .json array), examId? (enroll the new users)
