@@ -34,6 +34,8 @@ export type FairnessSimulationRow = {
   balancedTotalMarks: number;
   traditionalTopicCoverage: number;
   balancedTopicCoverage: number;
+  traditionalDistribution: Distribution;
+  balancedDistribution: Distribution;
 };
 
 const DIFFICULTY_SCORE: Record<Difficulty, number> = {
@@ -116,6 +118,14 @@ function shuffle<T>(items: readonly T[], random: () => number): T[] {
   return result;
 }
 
+function countDifficulties(questions: readonly FairnessQuestion[]): Distribution {
+  return {
+    EASY: questions.filter((question) => question.difficulty === "EASY").length,
+    MEDIUM: questions.filter((question) => question.difficulty === "MEDIUM").length,
+    HARD: questions.filter((question) => question.difficulty === "HARD").length,
+  };
+}
+
 function paperMetrics(questions: readonly FairnessQuestion[]) {
   const totalMarks = questions.reduce((sum, question) => sum + question.marks, 0);
   const weightedDifficulty = questions.reduce(
@@ -187,6 +197,8 @@ export function simulateFairness(
       balancedTotalMarks: Number(balanced.totalMarks.toFixed(2)),
       traditionalTopicCoverage: traditional.topicCoverage,
       balancedTopicCoverage: balanced.topicCoverage,
+      traditionalDistribution: countDifficulties(traditionalQuestions),
+      balancedDistribution: countDifficulties(balancedQuestions),
     };
   });
 
