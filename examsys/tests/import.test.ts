@@ -1,5 +1,6 @@
 import { Role, type Exam, type User } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST as importCandidates } from "@/app/api/import/candidates/route";
 import { POST as importQuestions } from "@/app/api/import/questions/route";
@@ -279,6 +280,19 @@ describe("POST /api/import/questions", () => {
     const created = await prisma.question.findFirst({ where: { text: `${tag} Pick schedulers` }, include: { options: true } });
     expect(created).toMatchObject({ createdById: examiner.id, type: "MULTI" });
     expect(created?.options).toHaveLength(3);
+  });
+});
+
+describe("sample templates", () => {
+  it("are fully valid (dry run)", async () => {
+    const [candidates, questions] = await Promise.all([
+      upload(importCandidates, examiner, { content: readFileSync("public/templates/candidates-sample.csv", "utf8") }, { dryRun: true }),
+      upload(importQuestions, otherExaminer, { content: readFileSync("public/templates/questions-sample.csv", "utf8") }, { dryRun: true }),
+    ]);
+    expect(candidates.body.total).toBe(5);
+    // Only "already exists" is tolerated, in case someone imported the sample into the test DB.
+    expect(candidates.body.rows.flatMap((row) => row.errors).filter((e) => !e.includes("already exists"))).toEqual([]);
+    expect(questions.body).toMatchObject({ total: 7, valid: 7, invalid: 0 });
   });
 });
 
