@@ -1,0 +1,34 @@
+name: Fairness simulator checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examsys/**"
+      - ".github/workflows/fairness-simulator-checks.yml"
+  pull_request:
+    paths:
+      - "examsys/**"
+      - ".github/workflows/fairness-simulator-checks.yml"
+
+jobs:
+  fairness-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examsys
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examsys/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run fairness simulator tests
+        run: npx vitest run lib/fairness/simulator.test.ts
+      - name: Type-check application
+        run: npm run typecheck
