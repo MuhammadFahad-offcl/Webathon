@@ -22,7 +22,7 @@ export default function SandboxPage() {
           Candidates never see this attempt and it is excluded from every count, result and report.
         </p>
       </div>
-      <Suspense fallback={<Skeleton className="h-64" label="Loading preview" />}>
+      <Suspense fallback={<Skeleton className="h-64" />}>
         <SandboxView />
       </Suspense>
     </div>
