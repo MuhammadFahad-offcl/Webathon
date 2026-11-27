@@ -45,6 +45,7 @@ export function windowMinutes(startAt: Date, endAt: Date) {
  */
 export function scheduleIssues(schedule: { startAt: Date; endAt: Date; durationMin: number }) {
   const issues: Record<string, string> = {};
+  if (!isValidSchedule(schedule)) return issues; // field-level errors already cover it
   if (schedule.endAt.getTime() <= schedule.startAt.getTime()) {
     issues.endAt = "End time must be after the start time";
   } else {
@@ -54,6 +55,21 @@ export function scheduleIssues(schedule: { startAt: Date; endAt: Date; durationM
     }
   }
   return issues;
+}
+
+/**
+ * zod 4 still runs object-level refinements when a field failed, so they receive raw input.
+ * Schedule rules only apply once every schedule field parsed.
+ */
+function isValidSchedule(value: { startAt: unknown; endAt: unknown; durationMin: unknown }) {
+  return (
+    value.startAt instanceof Date &&
+    !Number.isNaN(value.startAt.getTime()) &&
+    value.endAt instanceof Date &&
+    !Number.isNaN(value.endAt.getTime()) &&
+    typeof value.durationMin === "number" &&
+    Number.isFinite(value.durationMin)
+  );
 }
 
 export const START_IN_PAST_MESSAGE = "Start time must be in the future";
@@ -70,7 +86,7 @@ export const createExamSchema = z
     for (const [field, message] of Object.entries(scheduleIssues(value))) {
       ctx.addIssue({ code: "custom", path: [field], message });
     }
-    if (value.startAt.getTime() <= Date.now()) {
+    if (value.startAt instanceof Date && value.startAt.getTime() <= Date.now()) {
       ctx.addIssue({ code: "custom", path: ["startAt"], message: START_IN_PAST_MESSAGE });
     }
   });
@@ -106,6 +122,7 @@ export const assignQuestionsSchema = z
       .max(MAX_EXAM_QUESTIONS, `An exam can have at most ${MAX_EXAM_QUESTIONS} questions`),
   })
   .superRefine((value, ctx) => {
+    if (!Array.isArray(value.items)) return;
     const ids = value.items.map((item) => item.questionId);
     if (new Set(ids).size !== ids.length) {
       ctx.addIssue({ code: "custom", path: ["items"], message: "A question can only be added once" });
