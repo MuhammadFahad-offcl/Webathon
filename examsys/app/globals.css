@@ -390,6 +390,39 @@ a {
   clip-path: inset(50%);
 }
 
+.candidate-exam-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+}
+
+.candidate-exam-card {
+  display: grid;
+  min-width: 0;
+  gap: 1.1rem;
+  padding: 1.25rem;
+}
+
+.candidate-exam-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.candidate-exam-facts dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.candidate-exam-facts dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 @media (max-width: 760px) {
   :root {
     --space-page: 1rem;
@@ -456,6 +489,10 @@ a {
 
   .login-panel {
     padding: 1rem;
+  }
+
+  .candidate-exam-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
