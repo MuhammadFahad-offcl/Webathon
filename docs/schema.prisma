@@ -1,0 +1,261 @@
+// Web-e-Thon - Secure Examination Management System
+// Owner: Member 1. Others: request changes via the team chat, do NOT edit directly.
+// After any change: npx prisma migrate dev --name <change>  (then everyone pulls + runs `npx prisma generate`)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // Neon POOLED connection string
+  directUrl = env("DIRECT_URL")   // Neon DIRECT connection string (migrations)
+}
+
+enum Role {
+  ADMIN
+  EXAMINER
+  CANDIDATE
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MCQ      // single answer
+  MULTI    // multiple select
+  WRITTEN  // manually graded
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum MultiScheme {
+  ALL_OR_NOTHING
+  PARTIAL
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED   // finalized, written answers may still await manual grading
+  GRADED      // all questions graded, score final
+}
+
+enum IncidentType {
+  TAB_HIDDEN
+  FULLSCREEN_EXIT
+  PASTE
+  COPY
+  DISCONNECT
+  RECONNECT
+  LATE_SYNC
+  OTHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role
+  active       Boolean  @default(true)
+  rollNo       String?  // optional candidate identifier (used by CSV import)
+  createdAt    DateTime @default(now())
+
+  examsCreated  Exam[]       @relation("ExamCreator")
+  questions     Question[]
+  enrollments   Enrollment[]
+  attempts      Attempt[]
+  preference    UserPreference?
+  auditLogs     AuditLog[]
+}
+
+model Exam {
+  id               String     @id @default(cuid())
+  title            String
+  instructions     String     @default("")
+  startAt          DateTime
+  endAt            DateTime
+  durationMin      Int
+  totalMarks       Float      @default(0) // recomputed from ExamQuestion.marks
+  status           ExamStatus @default(DRAFT)
+  shuffleQuestions Boolean    @default(false)
+  shuffleOptions   Boolean    @default(false)
+  resultsPublishedAt DateTime?
+  createdById      String
+  createdBy        User       @relation("ExamCreator", fields: [createdById], references: [id])
+  createdAt        DateTime   @default(now())
+
+  questions     ExamQuestion[]
+  enrollments   Enrollment[]
+  attempts      Attempt[]
+  announcements Announcement[]
+
+  @@index([createdById])
+  @@index([status, startAt])
+}
+
+model Question {
+  id           String       @id @default(cuid())
+  topic        String
+  difficulty   Difficulty   @default(MEDIUM)
+  type         QuestionType
+  text         String
+  defaultMarks Float        @default(1)
+  negativeMarks Float       @default(0) // deducted for a wrong MCQ (0 = off)
+  multiScheme  MultiScheme  @default(ALL_OR_NOTHING)
+  createdById  String
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  createdAt    DateTime     @default(now())
+
+  options       Option[]
+  examQuestions ExamQuestion[]
+
+  @@index([topic, difficulty])
+}
+
+model Option {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean  @default(false)
+  order      Int      @default(0)
+}
+
+model ExamQuestion {
+  id         String   @id @default(cuid())
+  examId     String
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  marks      Float
+  order      Int      @default(0)
+
+  @@unique([examId, questionId])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([examId, userId])
+}
+
+model Attempt {
+  id         String        @id @default(cuid())
+  examId     String
+  exam       Exam          @relation(fields: [examId], references: [id])
+  userId     String
+  user       User          @relation(fields: [userId], references: [id])
+  status     AttemptStatus @default(IN_PROGRESS)
+  startedAt  DateTime      @default(now())
+  expiresAt  DateTime      // startedAt + duration, capped by exam.endAt. NEVER extended.
+  submittedAt DateTime?
+  score      Float?
+  isSandbox  Boolean       @default(false)
+  // Real attempts always use sandboxRun = 0 -> unique(examId,userId,0) blocks duplicates.
+  // Sandbox attempts use 1,2,3... so examiners can preview repeatedly.
+  sandboxRun Int           @default(0)
+  lastHeartbeatAt DateTime?
+  lateSyncCount   Int      @default(0)
+
+  questions AttemptQuestion[]
+  incidents Incident[]
+  report    Report?
+
+  @@unique([examId, userId, sandboxRun])
+  @@index([status, expiresAt])
+  @@index([examId, isSandbox])
+}
+
+// Snapshot of the paper as assigned to ONE attempt (questions, order, shuffled options, marks, scheme)
+model AttemptQuestion {
+  id         String  @id @default(cuid())
+  attemptId  String
+  attempt    Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String  // original bank id, used only for analytics
+  order      Int
+  marks      Float
+  // { type, text, topic, difficulty, negativeMarks, multiScheme,
+  //   options: [{ id, text, isCorrect }]  <- already in shuffled order }
+  snapshot   Json
+  answer     Answer?
+
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model Answer {
+  id                String          @id @default(cuid())
+  attemptQuestionId String          @unique
+  attemptQuestion   AttemptQuestion @relation(fields: [attemptQuestionId], references: [id], onDelete: Cascade)
+  // { optionIds?: string[], text?: string }
+  response          Json?
+  flagged           Boolean         @default(false) // marked for review
+  seq               Int             @default(0)     // highest client sequence accepted
+  savedAt           DateTime        @default(now())
+  awardedMarks      Float?
+  feedback          String?
+  gradedById        String?
+  gradedAt          DateTime?
+}
+
+model Incident {
+  id        String       @id @default(cuid())
+  attemptId String
+  attempt   Attempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type      IncidentType
+  meta      Json?
+  at        DateTime     @default(now())
+
+  @@index([attemptId, at])
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  message   String
+  at        DateTime @default(now())
+
+  @@index([examId, at])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  attemptId  String   @unique
+  attempt    Attempt  @relation(fields: [attemptId], references: [id])
+  verifyCode String   @unique // random, unguessable (e.g. 16+ chars)
+  hash       String   // SHA-256 of canonical result payload
+  issuedAt   DateTime @default(now())
+}
+
+model UserPreference {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id])
+  prefs  Json   // { theme, fontSize, layout, palettePosition, ... }
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String   // e.g. "exam.publish", "grade.update", "results.publish"
+  entity    String
+  entityId  String?
+  meta      Json?
+  at        DateTime @default(now())
+
+  @@index([entity, entityId])
+}
