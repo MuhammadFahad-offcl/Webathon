@@ -37,7 +37,7 @@ export const GET = apiHandler(async (request) => {
     const item = {
       examId: exam.id, title: exam.title, instructions: exam.instructions, startAt: exam.startAt,
       endAt: exam.endAt, durationMin: exam.durationMin, totalMarks: exam.totalMarks, phase,
-      accessStatus: status, attemptId: status === "IN_PROGRESS" ? attempt?.id ?? null : null,
+      accessStatus: status, attemptId: attempt?.id ?? null,
       resultsPublished: exam.resultsPublishedAt !== null,
     };
     if (status === "OPEN" || status === "IN_PROGRESS") groups.available.push(item);
