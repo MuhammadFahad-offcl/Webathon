@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { MAX_JSON_BODY_BYTES } from "@/lib/constants";
 import { AppError } from "@/lib/errors";
 import { zodFieldMap } from "@/lib/validation/fields";
 
@@ -97,10 +98,57 @@ export function withErrors<A extends unknown[]>(
   };
 }
 
-/** Parses a JSON body; an unreadable body is a validation error, not a 500. */
-export async function readJson(request: Request): Promise<unknown> {
+/** Parses a bounded JSON body; an unreadable body is a validation error, not a 500. */
+export async function readJson(
+  request: Request,
+  options: { maxBytes?: number; emptyBody?: unknown } = {},
+): Promise<unknown> {
+  const maxBytes = options.maxBytes ?? MAX_JSON_BODY_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new RangeError("maxBytes must be a non-negative safe integer");
+  }
+
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > maxBytes) {
+    throw validation("Request body exceeds the allowed size");
+  }
+
+  if (request.body === null) {
+    if ("emptyBody" in options) return options.emptyBody;
+    throw validation("Request body must be valid JSON");
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
   try {
-    return await request.json();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        throw validation("Request body exceeds the allowed size");
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw validation("Request body must be valid JSON");
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (totalBytes === 0 && "emptyBody" in options) return options.emptyBody;
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     throw validation("Request body must be valid JSON");
   }

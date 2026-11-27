@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiHandler, AppError } from "@/lib/errors";
+import { readJson } from "@/lib/api/errors";
 import { prisma } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validation/auth";
 import { clearFailures, isRateLimited, loginKey, recordFailure } from "@/lib/auth/login-rate-limit";
@@ -7,7 +8,7 @@ import { signSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth/se
 import { verifyPassword } from "@/lib/auth/password";
 
 export const POST = apiHandler(async (request) => {
-  const body: unknown = await request.json().catch(() => { throw new AppError("VALIDATION_ERROR", 400, "Invalid JSON body"); });
+  const body = await readJson(request, { maxBytes: 4 * 1024 });
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) throw new AppError("VALIDATION_ERROR", 400, "Check the highlighted fields", Object.fromEntries(parsed.error.issues.map((issue) => [String(issue.path[0]), issue.message])));
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
