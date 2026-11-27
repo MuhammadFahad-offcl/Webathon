@@ -1,0 +1,19 @@
+# Integration tests (Member 2)
+
+The tests call the real route handlers against a real Postgres database.
+
+1. Create `examsys/.env.test` (git ignores it) with a **Neon test branch**, never the demo database:
+   ```
+   DATABASE_URL="<pooled connection string>&connect_timeout=30&pool_timeout=60&connection_limit=5&pgbouncer=true"
+   DIRECT_URL="<direct connection string>&connect_timeout=30"
+   SESSION_SECRET="test-only-secret"
+   APP_URL="http://localhost:3000"
+   ```
+2. Apply migrations to it once: `npx dotenv -e .env.test -- prisma migrate deploy` (or set the two URLs in your shell and run `npx prisma migrate deploy`).
+3. Run `npm test`. On a slow link each database round trip can take ~1 s, so the suite takes a couple of minutes.
+
+If Prisma reports P1001 ("can't reach database server") while the host answers on port 5432, Windows may be trying IPv6 first on a network where IPv6 doesn't work. Raising IPv4's priority fixes it (admin PowerShell): `netsh interface ipv6 set prefixpolicy ::ffff:0:0/96 60 4`.
+
+Every row the tests create uses an email ending in `@m2test.local`, and `cleanupTestData()` removes only those rows. The one exception: the "last active admin" test briefly deactivates the other admins and reactivates them in a `finally` block.
+
+Routes use Member 1's real `requireRole(request, ...)`. `actAs(user)` in `tests/helpers.ts` makes the next calls carry a session cookie signed with `SESSION_SECRET` (from `.env.test`, 32+ characters), so authentication is exercised for real, not mocked.
