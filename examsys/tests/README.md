@@ -16,4 +16,4 @@ If Prisma reports P1001 ("can't reach database server") while the host answers o
 
 Every row the tests create uses an email ending in `@m2test.local`, and `cleanupTestData()` removes only those rows. The one exception: the "last active admin" test briefly deactivates the other admins and reactivates them in a `finally` block.
 
-Until Member 1's `lib/auth` lands, routes read the session from `lib/api/auth.ts`, a stand-in that is active only when `M2_DEV_AUTH=1` (the test setup sets it). `actAs(userId)` in `tests/helpers.ts` picks the user for the next calls.
+Routes use Member 1's real `requireRole(request, ...)`. `actAs(user)` in `tests/helpers.ts` makes the next calls carry a session cookie signed with `SESSION_SECRET` (from `.env.test`, 32+ characters), so authentication is exercised for real, not mocked.

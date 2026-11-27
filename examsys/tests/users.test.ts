@@ -1,13 +1,14 @@
-import { Role } from "@prisma/client";
+﻿import { Role, type User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GET as listUsers, POST as createUser } from "@/app/api/users/route";
 import { PATCH as updateUser } from "@/app/api/users/[id]/route";
+import { SESSION_COOKIE } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { actAs, call, cleanupTestData, makeUser, testEmail, TEST_DOMAIN } from "./helpers";
 
-let admin: { id: string };
-let examiner: { id: string };
+let admin: User;
+let examiner: User;
 
 beforeAll(async () => {
   await cleanupTestData();
@@ -29,7 +30,7 @@ describe("access control", () => {
   });
 
   it("rejects non-admins with 403 on every users endpoint", async () => {
-    actAs(examiner.id);
+    actAs(examiner);
     expect((await call(listUsers, { path: "/api/users" })).status).toBe(403);
     expect((await call(createUser, { method: "POST", body: {} })).status).toBe(403);
     const patch = await call(updateUser, {
@@ -41,16 +42,29 @@ describe("access control", () => {
     expect(patch.body.error.code).toBe("FORBIDDEN");
   });
 
+  it("rejects a forged session cookie", async () => {
+    const res = await listUsers(
+      new Request("http://test.local/api/users", { headers: { cookie: `${SESSION_COOKIE}=forged.token.value` } }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("uses the role in the database, not the one in an old session cookie", async () => {
+    const demoted = await makeUser(Role.EXAMINER);
+    actAs({ ...demoted, role: Role.ADMIN }); // cookie still says ADMIN
+    expect((await call(listUsers, { path: "/api/users" })).status).toBe(403);
+  });
+
   it("rejects a deactivated admin immediately", async () => {
     const inactive = await makeUser(Role.ADMIN, { active: false });
-    actAs(inactive.id);
+    actAs(inactive);
     expect((await call(listUsers, { path: "/api/users" })).status).toBe(401);
   });
 });
 
 describe("create user", () => {
   it("creates a user, hashes the password and never returns the hash", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const email = testEmail("new");
     const res = await call(createUser, {
       method: "POST",
@@ -69,7 +83,7 @@ describe("create user", () => {
   });
 
   it("returns 400 with per-field messages for invalid input", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const res = await call(createUser, {
       method: "POST",
       body: { name: "A", email: "not-an-email", role: "ROOT", password: "short" },
@@ -80,13 +94,13 @@ describe("create user", () => {
   });
 
   it("returns 400 for a body that is not JSON", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const res = await call(createUser, { method: "POST", body: "{oops" });
     expect(res.status).toBe(400);
   });
 
   it("returns a friendly 409 for a duplicate email", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const existing = await makeUser(Role.CANDIDATE);
     const res = await call(createUser, {
       method: "POST",
@@ -99,7 +113,7 @@ describe("create user", () => {
 
 describe("list users", () => {
   it("filters by search, role and active, and paginates", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const tag = `zz${Date.now()}`;
     const rows: { name: string; role: Role; active: boolean }[] = [
       { name: `${tag} cand 0`, role: Role.CANDIDATE, active: true },
@@ -127,14 +141,14 @@ describe("list users", () => {
   });
 
   it("rejects an invalid role filter", async () => {
-    actAs(admin.id);
+    actAs(admin);
     expect((await call(listUsers, { path: "/api/users?role=ROOT" })).status).toBe(400);
   });
 });
 
 describe("update user", () => {
   it("changes role, name and active flag", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const user = await makeUser(Role.CANDIDATE);
     const res = await call(updateUser, {
       method: "PATCH",
@@ -146,7 +160,7 @@ describe("update user", () => {
   });
 
   it("resets a password", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const user = await makeUser(Role.CANDIDATE);
     const res = await call(updateUser, { method: "PATCH", body: { password: "Brand@New1" }, params: { id: user.id } });
     expect(res.status).toBe(200);
@@ -155,19 +169,19 @@ describe("update user", () => {
   });
 
   it("returns 404 for an unknown user and 400 for an empty body", async () => {
-    actAs(admin.id);
+    actAs(admin);
     expect((await call(updateUser, { method: "PATCH", body: { name: "Nobody" }, params: { id: "missing" } })).status).toBe(404);
     expect((await call(updateUser, { method: "PATCH", body: {}, params: { id: admin.id } })).status).toBe(400);
   });
 
   it("does not let an admin deactivate their own account", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const res = await call(updateUser, { method: "PATCH", body: { active: false }, params: { id: admin.id } });
     expect(res.status).toBe(409);
   });
 
   it("allows demoting an admin while another active admin exists", async () => {
-    actAs(admin.id);
+    actAs(admin);
     const other = await makeUser(Role.ADMIN);
     const res = await call(updateUser, { method: "PATCH", body: { role: "EXAMINER" }, params: { id: other.id } });
     expect(res.status).toBe(200);
@@ -187,7 +201,7 @@ describe("update user", () => {
       data: { active: false },
     });
     try {
-      actAs(admin.id);
+      actAs(admin);
       // Two admins: demoting one is fine.
       expect((await call(updateUser, { method: "PATCH", body: { active: false }, params: { id: second.id } })).status).toBe(200);
       // Now `admin` is the last one; the other admin can't remove it either (re-activate second to act).

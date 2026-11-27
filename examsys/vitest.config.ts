@@ -7,7 +7,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    // tests/ = M2 integration tests (real DB); lib/**/*.test.ts = unit tests (M1's included).
+    include: ["tests/**/*.test.ts", "lib/**/*.test.ts"],
     setupFiles: ["tests/setup.ts"],
     // Integration tests share one real database, so run files one at a time.
     fileParallelism: false,

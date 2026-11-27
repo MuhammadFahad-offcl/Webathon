@@ -1,5 +1,5 @@
 import { Prisma, Role } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import { hashPassword } from "@/lib/auth/password";
 import { prisma } from "@/lib/prisma";
 import { ApiError, conflict, notFound } from "@/lib/api/errors";
 import type {
@@ -9,8 +9,6 @@ import type {
   updateUserSchema,
 } from "@/lib/validation/users";
 import type { z } from "zod";
-
-const BCRYPT_ROUNDS = 12;
 
 export const userSelect = {
   id: true,
@@ -71,7 +69,7 @@ export async function createUser(
   input: z.output<typeof createUserSchema>,
   actorId: string,
 ): Promise<UserDto> {
-  const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+  const passwordHash = await hashPassword(input.password);
   try {
     const user = await prisma.user.create({
       data: {
@@ -112,7 +110,7 @@ export async function updateUser(
   actorId: string,
 ): Promise<UserDto> {
   const passwordHash = input.password
-    ? await bcrypt.hash(input.password, BCRYPT_ROUNDS)
+    ? await hashPassword(input.password)
     : undefined;
 
   return prisma.$transaction(

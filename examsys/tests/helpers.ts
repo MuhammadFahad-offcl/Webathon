@@ -1,6 +1,6 @@
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { DEV_USER_HEADER } from "@/lib/api/auth";
+import { SESSION_COOKIE, signSession } from "@/lib/auth/session";
 
 /**
  * Every row a test creates is tagged so cleanup only ever touches test data:
@@ -12,9 +12,14 @@ let counter = 0;
 
 export const testEmail = (label: string) => `${label}-${runId}-${++counter}${TEST_DOMAIN}`;
 
-/** Makes the next handler calls run as this user (null = logged out). */
-export function actAs(userId: string | null) {
-  globalThis.__testHeaders = userId ? { [DEV_USER_HEADER]: userId } : {};
+let currentUser: { id: string; role: Role } | null = null;
+
+/**
+ * Makes the next handler calls run as this user (null = logged out). Requests carry a
+ * real session cookie signed by Member 1's `signSession`, so `requireRole` runs unmocked.
+ */
+export function actAs(user: { id: string; role: Role } | null) {
+  currentUser = user;
 }
 
 export async function makeUser(role: Role, overrides: { active?: boolean; name?: string } = {}) {
@@ -37,10 +42,14 @@ export async function call<T = any>( // eslint-disable-line @typescript-eslint/n
   handler: Handler,
   options: { method?: string; path?: string; body?: unknown; params?: Record<string, string> } = {},
 ): Promise<{ status: number; body: T }> {
-  const init: RequestInit = { method: options.method ?? "GET" };
+  const headers: Record<string, string> = {};
+  if (currentUser) {
+    headers.cookie = `${SESSION_COOKIE}=${await signSession({ userId: currentUser.id, role: currentUser.role })}`;
+  }
+  const init: RequestInit = { method: options.method ?? "GET", headers };
   if (options.body !== undefined) {
     init.body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
-    init.headers = { "content-type": "application/json" };
+    headers["content-type"] = "application/json";
   }
   const request = new Request(`http://test.local${options.path ?? "/"}`, init);
   const response = await handler(request, { params: Promise.resolve(options.params ?? {}) });

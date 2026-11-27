@@ -1,7 +1,17 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { AppError } from "@/lib/errors";
 import { zodFieldMap } from "@/lib/validation/fields";
+
+/**
+ * Member 2's route wrapper. It builds on Member 1's `AppError` (lib/errors.ts), so
+ * errors thrown by M1's guards and services render the same way, and adds what
+ * M1's `apiHandler` does not cover yet:
+ * - a context argument, for dynamic routes like /api/users/[id];
+ * - zod errors -> 400 VALIDATION_ERROR with per-field messages;
+ * - Prisma unique / not-found / serialization errors -> 409 / 404 / 409.
+ */
 
 /** Error codes from the shared contract (section 4). */
 export type ErrorCode =
@@ -14,8 +24,7 @@ export type ErrorCode =
   | "EXAM_ENDED"
   | "ATTEMPT_CLOSED"
   | "NOT_ENROLLED"
-  | "RATE_LIMITED"
-  | "INTERNAL_ERROR";
+  | "RATE_LIMITED";
 
 const STATUS: Record<ErrorCode, number> = {
   VALIDATION_ERROR: 400,
@@ -28,29 +37,12 @@ const STATUS: Record<ErrorCode, number> = {
   ATTEMPT_CLOSED: 409,
   NOT_ENROLLED: 403,
   RATE_LIMITED: 429,
-  INTERNAL_ERROR: 500,
 };
 
-export type ErrorBody = {
-  error: {
-    code: ErrorCode;
-    message: string;
-    fields?: Record<string, string>;
-    details?: Record<string, unknown>;
-  };
-};
-
-/** Throw from any route or service; `withErrors` turns it into the contract's JSON shape. */
-export class ApiError extends Error {
-  readonly status: number;
-  constructor(
-    readonly code: ErrorCode,
-    message: string,
-    readonly fields?: Record<string, string>,
-    readonly details?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.status = STATUS[code];
+/** `AppError` with the status looked up from the code. */
+export class ApiError extends AppError {
+  constructor(code: ErrorCode, message: string, fields?: Record<string, string>, details?: Record<string, unknown>) {
+    super(code, STATUS[code], message, fields, details);
   }
 }
 
@@ -60,26 +52,35 @@ export const conflict = (message: string, details?: Record<string, unknown>) =>
 export const validation = (message: string, fields?: Record<string, string>) =>
   new ApiError("VALIDATION_ERROR", message, fields);
 
-export function errorResponse(error: unknown): NextResponse<ErrorBody> {
-  let apiError: ApiError;
-  if (error instanceof ApiError) {
-    apiError = error;
-  } else if (error instanceof ZodError) {
-    apiError = validation("Some fields are invalid", zodFieldMap(error));
-  } else if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-    apiError = conflict("A record with these details already exists");
-  } else if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
-    apiError = conflict("Another change happened at the same time. Please try again.");
-  } else if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-    apiError = notFound();
-  } else {
-    console.error(error);
-    apiError = new ApiError("INTERNAL_ERROR", "Something went wrong");
+export type ErrorBody = {
+  error: { code: string; message: string; fields?: Record<string, string>; details?: unknown };
+};
+
+function isNextControlFlow(error: unknown) {
+  // Next.js signals prerender interruption / redirects with errors that must propagate.
+  return typeof error === "object" && error !== null && "digest" in error &&
+    typeof (error as { digest?: unknown }).digest === "string" &&
+    /^(NEXT_PRERENDER_INTERRUPTED|NEXT_REDIRECT|NEXT_NOT_FOUND|DYNAMIC_SERVER_USAGE)/.test((error as { digest: string }).digest);
+}
+
+function toAppError(error: unknown): AppError {
+  if (error instanceof AppError) return error;
+  if (error instanceof ZodError) return validation("Some fields are invalid", zodFieldMap(error));
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2002") return conflict("A record with these details already exists");
+    if (error.code === "P2025") return notFound();
+    if (error.code === "P2034") return conflict("Another change happened at the same time. Please try again.");
   }
-  const body: ErrorBody = { error: { code: apiError.code, message: apiError.message } };
-  if (apiError.fields) body.error.fields = apiError.fields;
-  if (apiError.details) body.error.details = apiError.details;
-  return NextResponse.json(body, { status: apiError.status });
+  console.error("Unhandled API error", error);
+  return new AppError("INTERNAL", 500, "An unexpected error occurred");
+}
+
+export function errorResponse(error: unknown): NextResponse<ErrorBody> {
+  const appError = toAppError(error);
+  const body: ErrorBody = { error: { code: appError.code, message: appError.message } };
+  if (appError.fields) body.error.fields = appError.fields;
+  if (appError.details) body.error.details = appError.details;
+  return NextResponse.json(body, { status: appError.status });
 }
 
 /** Wraps a route handler so thrown errors become contract-shaped JSON responses. */
@@ -90,6 +91,7 @@ export function withErrors<A extends unknown[]>(
     try {
       return await handler(...args);
     } catch (error) {
+      if (isNextControlFlow(error)) throw error;
       return errorResponse(error);
     }
   };
