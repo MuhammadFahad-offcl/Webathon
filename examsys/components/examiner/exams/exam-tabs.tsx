@@ -2,6 +2,8 @@
 
 import type { ComponentType } from "react";
 import type { ExamDetail } from "@/lib/validation/exams";
+import { GradingTab } from "@/components/examiner/grading/grading-tab";
+import { ResultsTab } from "@/components/examiner/grading/results-tab";
 import { CandidatesTabSlot } from "./candidates-tab-slot";
 import { DetailsTab } from "./details-tab";
 import { QuestionsTab } from "./questions-tab";
@@ -42,8 +44,8 @@ export const EXAM_TABS: readonly ExamTab[] = [
   { id: "questions", label: "Questions", Component: QuestionsTab },
   { id: "candidates", label: "Candidates", Component: CandidatesTab },
   { id: "monitor", label: "Monitor", Component: comingSoon("Monitor") },
-  { id: "grading", label: "Grading", Component: comingSoon("Grading") },
-  { id: "results", label: "Results", Component: comingSoon("Results") },
+  { id: "grading", label: "Grading", Component: GradingTab },
+  { id: "results", label: "Results", Component: ResultsTab },
   { id: "analytics", label: "Analytics", Component: comingSoon("Analytics") },
 ];
 
