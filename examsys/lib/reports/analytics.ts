@@ -365,18 +365,24 @@ export function summarizeQuestions(
 // DB loaders
 // ---------------------------------------------------------------------------------------------
 
-/** Finalizes real attempts that are past their grace window, so they count as submitted. */
-async function finalizeExpired(examId: string) {
-  const expired = await prisma.attempt.findMany({
-    where: { examId, isSandbox: false, status: "IN_PROGRESS", expiresAt: { lt: new Date(Date.now() - GRACE_MS) } },
-    select: { id: true },
+/**
+ * Finalizes real attempts that are past their grace window (so they count as submitted) and
+ * returns how many are still genuinely running.
+ */
+async function finalizeExpired(examId: string): Promise<number> {
+  const running = await prisma.attempt.findMany({
+    where: { examId, isSandbox: false, status: "IN_PROGRESS" },
+    select: { id: true, expiresAt: true },
   });
-  await Promise.all(expired.map((attempt) => finalizeIfExpired(attempt.id)));
+  const cutoff = Date.now() - GRACE_MS;
+  const expired = running.filter((attempt) => attempt.expiresAt.getTime() < cutoff);
+  const results = await Promise.all(expired.map((attempt) => finalizeIfExpired(attempt.id)));
+  return running.length - results.filter((attempt) => attempt && attempt.status !== "IN_PROGRESS").length;
 }
 
 async function loadExamData(examId: string) {
-  await finalizeExpired(examId);
-  const [exam, attempts, inProgress] = await Promise.all([
+  const inProgress = await finalizeExpired(examId);
+  const [exam, attempts] = await Promise.all([
     prisma.exam.findUnique({
       where: { id: examId },
       select: {
@@ -409,7 +415,6 @@ async function loadExamData(examId: string) {
         },
       },
     }),
-    prisma.attempt.count({ where: { examId, isSandbox: false, status: "IN_PROGRESS" } }),
   ]);
   if (!exam) throw notFound("Exam");
   return { exam, attempts: attempts as AnalyticsAttempt[], inProgress };
