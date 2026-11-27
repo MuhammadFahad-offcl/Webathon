@@ -144,8 +144,8 @@ Rules (server-enforced): the last active ADMIN cannot be demoted or deactivated 
 ## 5. Candidate lookup (EXAMINER, ADMIN)
 
 ### `GET /api/candidates`
-Query: `search` (name, email or roll number), `page`, `pageSize`.
-Response: paginated `items` of `{ "id", "name", "email", "rollNo" }`, only users with role CANDIDATE and `active = true`. Exists so examiners can enroll people without being able to call `/api/users`.
+Query: `search` (name, email or roll number), `limit` (default 20, max 50), optional `examId`.
+Response: `{ "items": [ { "id", "name", "email", "rollNo", "enrolled"? } ] }`, only users with role CANDIDATE and `active = true`. `enrolled` (boolean) is present only when `examId` is given; the caller must own that exam (else `404`). Exists so examiners can enroll people without being able to call `/api/users`.
 
 ---
 
@@ -155,7 +155,9 @@ Questions are visible and editable only by their creator (ADMIN sees all).
 
 ### 6.1 `GET /api/questions`
 Query: `topic`, `difficulty`, `type`, `search` (text), `page`, `pageSize`.
-Item: `{ "id", "topic", "difficulty", "type", "text", "defaultMarks", "negativeMarks", "multiScheme", "options": [ { "id", "text", "isCorrect", "order" } ], "usedInExams": 2 }`. (Examiner/admin responses include `isCorrect`.)
+Response: `{ "items": [...], "page", "pageSize", "total", "totalPages" }`, newest first. Item: `{ "id", "topic", "difficulty", "type", "text", "defaultMarks", "negativeMarks", "multiScheme", "options": [ { "id", "text", "isCorrect", "order" } ], "usedInExams": 2, "createdAt", "createdBy": { "id", "name" } }`. (Examiner/admin responses include `isCorrect`.)
+
+`GET /api/questions/topics` -> `{ "topics": ["Databases", ...] }` (distinct topics the caller can see; for autocomplete).
 
 ### 6.2 `POST /api/questions`
 ```json
@@ -165,68 +167,72 @@ Item: `{ "id", "topic", "difficulty", "type", "text", "defaultMarks", "negativeM
   "options": [ { "text": "TCP", "isCorrect": true }, { "text": "UDP", "isCorrect": true },
                { "text": "HTTP", "isCorrect": false } ] }
 ```
-Validation: `topic` 1-100 chars; `text` 1-5000; `defaultMarks` > 0; `negativeMarks` >= 0. By type: **MCQ** - 2 to 6 options, exactly 1 correct; **MULTI** - 2 to 6 options, at least 1 correct; **WRITTEN** - no options. Option text 1-1000 chars.
+Validation: `topic` 1-100 chars; `text` 1-5000; `0 < defaultMarks <= 100`; `0 <= negativeMarks <= defaultMarks`. By type: **MCQ** - 2 to 10 options, exactly 1 correct; **MULTI** - 2 to 10 options, at least 1 correct; **WRITTEN** - no options and no negative marks. Option text 1-1000 chars, no duplicates (case-insensitive). Per-type option errors are reported on `fields.options`.
 Response `201`: `{ "question": { ... } }`.
 
 ### 6.3 `GET /api/questions/:id`, `PATCH /api/questions/:id`
-`PATCH` takes any subset of the creation fields; if `options` is sent it replaces the whole option list (validated as above). Editing a question never changes existing attempts (they use snapshots).
+`GET` adds `"exams": [ { "id", "title", "status" } ]` (exams using it).
+`PATCH` takes any subset of the creation fields; if `options` is sent it replaces the whole option list. Type rules are checked on the merged result. Editing a question never changes existing attempts (they use snapshots). **Locking:** once the question is in a non-DRAFT exam or an exam with real attempts, changing `type`, `options`, `defaultMarks`, `negativeMarks` or `multiScheme` -> `409 CONFLICT` with `details: { lockedFields, exams }` ("duplicate it instead"); text, topic and difficulty stay editable.
 
 ### 6.4 `DELETE /api/questions/:id`
-`204`. `409 CONFLICT` if the question is assigned to any exam.
+`204`. `409 CONFLICT` with `details.exams: [ { "id", "title" } ]` if the question is assigned to any exam.
+
+### 6.5 `POST /api/questions/:id/duplicate`
+`201` `{ "question": { ... } }`: a copy owned by the caller, text prefixed "Copy of ".
 
 ---
 
 ## 7. Exams
 
-Exam object (examiner view):
+Exam summary (examiner view; all counts exclude sandbox attempts):
 ```json
-{ "id": "...", "title": "...", "instructions": "...", "startAt": "...", "endAt": "...",
-  "durationMin": 60, "totalMarks": 50, "status": "PUBLISHED", "phase": "UPCOMING",
-  "shuffleQuestions": true, "shuffleOptions": true, "resultsPublishedAt": null,
-  "createdById": "...", "createdAt": "..." }
+{ "id": "...", "title": "...", "status": "PUBLISHED", "phase": "UPCOMING",
+  "startAt": "...", "endAt": "...", "durationMin": 60, "totalMarks": 50,
+  "questionCount": 25, "enrolledCount": 40, "attemptCount": 0, "resultsPublishedAt": null,
+  "createdBy": { "id": "...", "name": "..." } }
 ```
+Exam detail = summary + `"instructions", "shuffleQuestions", "shuffleOptions", "locked", "lockReason"` and `"questions": [ { "questionId", "order", "marks", "type", "topic", "difficulty", "text", "optionCount" } ]` (no answer keys).
 
 ### 7.1 `GET /api/exams`
-Query: `phase`, `search`, `page`, `pageSize`. Examiners see their own exams; admins see all.
-Item: exam object + `"questionCount"`, `"enrolledCount"`.
+Query: `phase`, `search`. Examiners see their own exams; admins see all. Response: `{ "items": [ summary ] }`, newest first (max 500).
 
 ### 7.2 `POST /api/exams`
 Request: `{ "title", "instructions", "startAt", "endAt", "durationMin", "shuffleQuestions", "shuffleOptions" }`
-Validation: `title` 1-200; `instructions` up to 10000; `durationMin` integer 1-1440; `endAt > startAt`; `durationMin <=` window length in minutes.
-Response `201`: `{ "exam": { ... } }` (status `DRAFT`, `totalMarks` 0).
+Validation: `title` 3-200; `instructions` up to 10000; `durationMin` integer 1-1440; `endAt > startAt`; `durationMin <=` window length in minutes; `startAt` in the future.
+Response `201`: `{ "exam": detail }` (status `DRAFT`, `totalMarks` 0).
 
 ### 7.3 `GET /api/exams/:id`
-Response: `{ "exam": { ... }, "questions": [ { "questionId", "order", "marks", "type", "topic", "difficulty", "text" } ], "enrolledCount": 40 }`.
+Response: `{ "exam": detail }`.
 
 ### 7.4 `PATCH /api/exams/:id`
-Any subset of the creation fields, same validation. **Locking:** once the phase is ONGOING or COMPLETED, or any real attempt exists, only `title` and `instructions` may change; any other field -> `409 CONFLICT`.
+Any subset of the creation fields, same validation (a changed `startAt` must be in the future). Only fields whose value actually changes count. **Locking:** once results are published, the exam is ARCHIVED, the phase is ONGOING or COMPLETED, or any real attempt exists, only `title` and `instructions` may change; any other field -> `409 CONFLICT` with `details.lockedFields`.
 
 ### 7.5 `PUT /api/exams/:id/questions`
 Replaces the exam's question list:
 ```json
 { "items": [ { "questionId": "...", "marks": 2, "order": 1 }, { "questionId": "...", "marks": 5, "order": 2 } ] }
 ```
-Server recomputes `Exam.totalMarks` as the sum of `marks`. Questions must belong to the caller (or caller is admin). `409 CONFLICT` if a real attempt already exists. Response `200`: `{ "exam": { ... } }`.
+Max 200 items; unique `questionId`s and orders; `0 < marks <= 100`. Server recomputes `Exam.totalMarks` as the sum of `marks` in the same transaction. Questions must belong to the caller (or caller is admin), else `400` with `fields.items`. Same locking as 7.4 -> `409 CONFLICT`. Response `200`: `{ "exam": detail }`.
 
-### 7.6 `POST /api/exams/:id/publish`
-Review-before-publish gate. Succeeds only if: status is `DRAFT`, there is at least one question, schedule is valid (`endAt > startAt`, `durationMin <=` window, `endAt` in the future).
-Response `200`: `{ "exam": { "status": "PUBLISHED", ... }, "warnings": [ "No candidates are enrolled yet" ] }`.
-Errors: `409 CONFLICT` with `details.problems: [ "No questions assigned", ... ]`. There is no unpublish. Writes an `AuditLog` row.
+### 7.6 `GET /api/exams/:id/publish-check` and `POST /api/exams/:id/publish`
+`publish-check` -> `{ "ready", "blockers": [...], "warnings": [...], "summary": { "questionCount", "totalMarks", "enrolledCount", "startAt", "endAt", "durationMin" } }` (feeds the review page).
+Blockers: not `DRAFT`, no questions, invalid schedule, start time in the past, an MCQ/MULTI question without 2+ options or a correct option, stored total marks out of sync. Warnings (don't block): no candidates enrolled, window much longer than the duration, starts within 15 minutes, written questions need manual grading, no instructions.
+`publish` -> `200` `{ "exam": detail, "warnings": [...] }`. Errors: `409 CONFLICT` with `details.blockers: [ ... ]` (also on a double publish). There is no unpublish. Writes an `AuditLog` row.
 
 ---
 
 ## 8. Enrollments
 
 ### 8.1 `GET /api/exams/:id/enrollments`
-Response: `{ "items": [ { "userId", "name", "email", "rollNo", "attemptStatus": "NOT_STARTED|IN_PROGRESS|SUBMITTED|GRADED" } ] }` (real attempts only).
+Response: `{ "items": [ { "userId", "name", "email", "rollNo", "enrolledAt", "status": "NOT_STARTED|IN_PROGRESS|SUBMITTED|GRADED", "attemptId", "score" } ], "counts": { "enrolled", "notStarted", "inProgress", "submitted" } }` (real attempts only; `submitted` counts SUBMITTED + GRADED).
 
 ### 8.2 `POST /api/exams/:id/enrollments`
-Request: `{ "userIds": ["..."], "emails": ["..."] }` (at least one of the two, max 500 entries total).
-Response `200`: `{ "added": 12, "skipped": [ { "ref": "x@y.com", "reason": "NOT_FOUND|NOT_A_CANDIDATE|INACTIVE|ALREADY_ENROLLED" } ] }`.
-`409 CONFLICT` if results are already published.
+Request: `{ "userIds": ["..."], "emails": ["..."] }` (at least one of the two, max 500 entries total; emails matched case-insensitively).
+Response `200`: `{ "added": 12, "alreadyEnrolled": 1, "rejected": [ { "value": "x@y.com", "reason": "Only candidates can be enrolled" } ] }`. Rejection reasons: no user with this id/email, not a candidate, inactive account. Duplicates are ignored.
+`409 CONFLICT` if the exam is COMPLETED or ARCHIVED, or results are already published.
 
 ### 8.3 `DELETE /api/exams/:id/enrollments/:userId`
-`204`. `409 CONFLICT` if that candidate already has a real attempt.
+`204`. `404` if not enrolled. `409 CONFLICT` if that candidate already has a real attempt (a sandbox attempt doesn't count).
 
 ---
 
