@@ -1,0 +1,254 @@
+// Web-e-Thon - Secure Examination Management System
+// Owner: Member 1. Others: request changes via the team chat, do NOT edit directly.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  EXAMINER
+  CANDIDATE
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MCQ
+  MULTI
+  WRITTEN
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum MultiScheme {
+  ALL_OR_NOTHING
+  PARTIAL
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+}
+
+enum IncidentType {
+  TAB_HIDDEN
+  FULLSCREEN_EXIT
+  PASTE
+  COPY
+  DISCONNECT
+  RECONNECT
+  LATE_SYNC
+  OTHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role
+  active       Boolean  @default(true)
+  rollNo       String?
+  createdAt    DateTime @default(now())
+
+  examsCreated  Exam[]       @relation("ExamCreator")
+  questions     Question[]
+  enrollments   Enrollment[]
+  attempts      Attempt[]
+  preference    UserPreference?
+  auditLogs     AuditLog[]
+}
+
+model Exam {
+  id                 String     @id @default(cuid())
+  title              String
+  instructions       String     @default("")
+  startAt            DateTime
+  endAt              DateTime
+  durationMin        Int
+  totalMarks         Float      @default(0)
+  status             ExamStatus @default(DRAFT)
+  shuffleQuestions   Boolean    @default(false)
+  shuffleOptions     Boolean    @default(false)
+  resultsPublishedAt DateTime?
+  createdById        String
+  createdBy          User       @relation("ExamCreator", fields: [createdById], references: [id])
+  createdAt          DateTime   @default(now())
+
+  questions     ExamQuestion[]
+  enrollments   Enrollment[]
+  attempts      Attempt[]
+  announcements Announcement[]
+
+  @@index([createdById])
+  @@index([status, startAt])
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  topic         String
+  difficulty    Difficulty   @default(MEDIUM)
+  type          QuestionType
+  text          String
+  defaultMarks  Float        @default(1)
+  negativeMarks Float        @default(0)
+  multiScheme   MultiScheme  @default(ALL_OR_NOTHING)
+  createdById   String
+  createdBy     User         @relation(fields: [createdById], references: [id])
+  createdAt     DateTime     @default(now())
+
+  options       Option[]
+  examQuestions ExamQuestion[]
+
+  @@index([topic, difficulty])
+}
+
+model Option {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean  @default(false)
+  order      Int      @default(0)
+}
+
+model ExamQuestion {
+  id         String   @id @default(cuid())
+  examId     String
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  marks      Float
+  order      Int      @default(0)
+
+  @@unique([examId, questionId])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([examId, userId])
+}
+
+model Attempt {
+  id              String        @id @default(cuid())
+  examId          String
+  exam            Exam          @relation(fields: [examId], references: [id])
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  status          AttemptStatus @default(IN_PROGRESS)
+  startedAt       DateTime      @default(now())
+  expiresAt       DateTime
+  submittedAt     DateTime?
+  score           Float?
+  isSandbox       Boolean       @default(false)
+  sandboxRun      Int           @default(0)
+  lastHeartbeatAt DateTime?
+  lateSyncCount   Int           @default(0)
+
+  questions AttemptQuestion[]
+  incidents Incident[]
+  report    Report?
+
+  @@unique([examId, userId, sandboxRun])
+  @@index([status, expiresAt])
+  @@index([examId, isSandbox])
+}
+
+model AttemptQuestion {
+  id         String  @id @default(cuid())
+  attemptId  String
+  attempt    Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  order      Int
+  marks      Float
+  snapshot   Json
+  answer     Answer?
+
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model Answer {
+  id                String          @id @default(cuid())
+  attemptQuestionId String          @unique
+  attemptQuestion   AttemptQuestion @relation(fields: [attemptQuestionId], references: [id], onDelete: Cascade)
+  response          Json?
+  flagged           Boolean         @default(false)
+  seq               Int             @default(0)
+  savedAt           DateTime        @default(now())
+  awardedMarks      Float?
+  feedback          String?
+  gradedById        String?
+  gradedAt          DateTime?
+}
+
+model Incident {
+  id        String       @id @default(cuid())
+  attemptId String
+  attempt   Attempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type      IncidentType
+  meta      Json?
+  at        DateTime     @default(now())
+
+  @@index([attemptId, at])
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  message   String
+  at        DateTime @default(now())
+
+  @@index([examId, at])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  attemptId  String   @unique
+  attempt    Attempt  @relation(fields: [attemptId], references: [id])
+  verifyCode String   @unique
+  hash       String
+  issuedAt   DateTime @default(now())
+}
+
+model UserPreference {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id])
+  prefs  Json
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  actorId  String?
+  actor    User?    @relation(fields: [actorId], references: [id])
+  action   String
+  entity   String
+  entityId String?
+  meta     Json?
+  at       DateTime @default(now())
+
+  @@index([entity, entityId])
+}

@@ -1,0 +1,13 @@
+export const GRACE_MS = 120_000;
+export const HEARTBEAT_INTERVAL_MS = 15_000;
+export const DISCONNECT_GAP_MS = 45_000;
+export const AUTOSAVE_DEBOUNCE_MS = 500;
+export const MONITOR_POLL_MS = 4_000;
+export const LOGIN_MAX_FAILURES = 5;
+export const LOGIN_FAILURE_WINDOW_MS = 15 * 60_000;
+export const INCIDENT_MAX_PER_MIN = 30;
+export const WRITTEN_MAX_CHARS = 20_000;
+export const IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+export const IMPORT_MAX_ROWS = 2_000;
+export const PASS_PERCENT = 40;
+export const SESSION_TTL_HOURS = 12;
