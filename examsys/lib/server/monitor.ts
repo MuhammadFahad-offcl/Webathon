@@ -4,6 +4,7 @@ import { conflict } from "@/lib/api/errors";
 import { assertEnrolled, assertExamOwner } from "@/lib/auth/guards";
 import { GRACE_MS } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT, realAttemptSql } from "@/lib/server/attempt-scope";
 import { finalizeIfExpired } from "@/lib/services/attempt-service";
 import { deriveExamPhase } from "@/lib/services/exam-lifecycle";
 import type { ExamPhaseName } from "@/lib/validation/exams";
@@ -33,7 +34,7 @@ export async function getMonitor(examId: string, query: MonitorQuery, session: S
   const overdue = await prisma.attempt.findMany({
     where: {
       examId,
-      isSandbox: false,
+      ...REAL_ATTEMPT,
       status: AttemptStatus.IN_PROGRESS,
       expiresAt: { lt: new Date(Date.now() - GRACE_MS) },
     },
@@ -42,7 +43,7 @@ export async function getMonitor(examId: string, query: MonitorQuery, session: S
   for (const attempt of overdue) await finalizeIfExpired(attempt.id);
 
   const incidentWhere: Prisma.IncidentWhereInput = {
-    attempt: { examId, isSandbox: false },
+    attempt: { examId, ...REAL_ATTEMPT },
     ...(query.type ? { type: query.type } : {}),
     ...(query.attemptId ? { attemptId: query.attemptId } : {}),
   };
@@ -50,7 +51,7 @@ export async function getMonitor(examId: string, query: MonitorQuery, session: S
   const [enrollments, attempts, answeredRows, incidents] = await Promise.all([
     prisma.enrollment.findMany({ where: { examId }, select: { userId: true } }),
     prisma.attempt.findMany({
-      where: { examId, isSandbox: false },
+      where: { examId, ...REAL_ATTEMPT },
       select: {
         id: true,
         status: true,
@@ -70,7 +71,7 @@ export async function getMonitor(examId: string, query: MonitorQuery, session: S
       FROM "Answer" an
       JOIN "AttemptQuestion" aq ON aq."id" = an."attemptQuestionId"
       JOIN "Attempt" a ON a."id" = aq."attemptId"
-      WHERE a."examId" = ${examId} AND a."isSandbox" = false
+      WHERE a."examId" = ${examId} AND ${realAttemptSql("a")}
         AND (
           (jsonb_typeof(an."response"->'optionIds') = 'array' AND jsonb_array_length(an."response"->'optionIds') > 0)
           OR length(btrim(COALESCE(an."response"->>'text', ''))) > 0

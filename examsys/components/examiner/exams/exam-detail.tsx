@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiClientError, apiFetch } from "@/lib/client/api";
 import type { ExamDetail } from "@/lib/validation/exams";
 import { primaryButton } from "@/components/examiner/users/user-dialog";
+import { PreviewAsCandidateButton } from "@/components/examiner/sandbox/preview-button";
 import { EXAM_TABS, findExamTab } from "./exam-tabs";
 import { formatDateTime, formatDuration, formatMarks } from "./format";
 import { Fact, Notice, PhaseBadge } from "./ui";
@@ -97,11 +98,14 @@ export function ExamDetailView() {
             </div>
             <p className="text-sm opacity-70">Created by {exam.createdBy.name}</p>
           </div>
-          {exam.status === "DRAFT" && (
-            <Link href={`/examiner/exams/${exam.id}/review`} className={primaryButton}>
-              Review &amp; publish
-            </Link>
-          )}
+          <div className="flex flex-wrap items-start gap-3">
+            <PreviewAsCandidateButton examId={exam.id} questionCount={exam.questionCount} />
+            {exam.status === "DRAFT" && (
+              <Link href={`/examiner/exams/${exam.id}/review`} className={primaryButton}>
+                Review &amp; publish
+              </Link>
+            )}
+          </div>
         </div>
 
         <dl className="grid grid-cols-2 gap-4 rounded-xl border border-black/10 p-4 text-sm sm:grid-cols-3 lg:grid-cols-6 dark:border-white/15">

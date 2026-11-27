@@ -4,6 +4,7 @@ import { ApiError, conflict, notFound } from "@/lib/api/errors";
 import { assertExamOwner } from "@/lib/auth/guards";
 import { PASS_PERCENT } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
+import { REAL_ATTEMPT } from "@/lib/server/attempt-scope";
 import { resultHash } from "@/lib/services/result-service";
 import { computeExamStats, isPass, percentOf, rankByScore, scoreDistribution } from "@/lib/reports/exam-stats";
 import type { AttemptReportData, ExamReportData } from "@/lib/reports/pdf";
@@ -84,7 +85,7 @@ function topicOf(snapshot: unknown) {
 export async function loadExamReport(examId: string, session: Session): Promise<ExamReportData> {
   const exam = await assertExamOwner(examId, session.userId, session.role);
   const attempts = await prisma.attempt.findMany({
-    where: { examId, isSandbox: false, status: { in: ["SUBMITTED", "GRADED"] } },
+    where: { examId, ...REAL_ATTEMPT, status: { in: ["SUBMITTED", "GRADED"] } },
     select: {
       status: true,
       score: true,
