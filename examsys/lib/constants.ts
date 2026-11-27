@@ -11,3 +11,4 @@ export const IMPORT_MAX_BYTES = 2 * 1024 * 1024;
 export const IMPORT_MAX_ROWS = 2_000;
 export const PASS_PERCENT = 40;
 export const SESSION_TTL_HOURS = 12;
+export const MAX_JSON_BODY_BYTES = 1024 * 1024;
