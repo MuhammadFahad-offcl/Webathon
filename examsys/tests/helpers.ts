@@ -58,16 +58,90 @@ export async function call<T = any>( // eslint-disable-line @typescript-eslint/n
   return { status: response.status, body: text ? JSON.parse(text) : null };
 }
 
-/** Deletes everything this test run created (and older leftovers from crashed runs). */
+type QuestionKind = "MCQ" | "MULTI" | "WRITTEN";
+
+/** A bank question owned by `createdById`. MCQ: option 1 correct; MULTI: options 1+2 correct. */
+export async function makeQuestion(
+  createdById: string,
+  overrides: Partial<{ type: QuestionKind; topic: string; text: string; difficulty: "EASY" | "MEDIUM" | "HARD"; defaultMarks: number }> = {},
+) {
+  const type = overrides.type ?? "MCQ";
+  const options =
+    type === "WRITTEN"
+      ? []
+      : [1, 2, 3, 4].map((order) => ({
+          text: `Option ${order}`,
+          order,
+          isCorrect: order === 1 || (type === "MULTI" && order === 2),
+        }));
+  return prisma.question.create({
+    data: {
+      createdById,
+      type,
+      topic: overrides.topic ?? "Testing",
+      difficulty: overrides.difficulty ?? "MEDIUM",
+      text: overrides.text ?? `Test ${type} question ${++counter}`,
+      defaultMarks: overrides.defaultMarks ?? 2,
+      ...(options.length ? { options: { create: options } } : {}),
+    },
+    include: { options: { orderBy: { order: "asc" } } },
+  });
+}
+
+/** An exam owned by `createdById`; DRAFT, starting tomorrow for 2 hours, 60 min long. */
+export async function makeExam(
+  createdById: string,
+  overrides: Partial<{ title: string; status: "DRAFT" | "PUBLISHED"; startAt: Date; endAt: Date; durationMin: number }> = {},
+) {
+  const startAt = overrides.startAt ?? new Date(Date.now() + 24 * 3_600_000);
+  return prisma.exam.create({
+    data: {
+      createdById,
+      title: overrides.title ?? `Test exam ${++counter}`,
+      status: overrides.status ?? "DRAFT",
+      startAt,
+      endAt: overrides.endAt ?? new Date(startAt.getTime() + 2 * 3_600_000),
+      durationMin: overrides.durationMin ?? 60,
+    },
+  });
+}
+
+/**
+ * Deletes everything owned by THIS test file's users (emails contain this run's id),
+ * plus leftovers of crashed runs older than 3 hours. Scoped this way, several test
+ * runs (e.g. parallel PR branches) can share the one test database safely.
+ */
 export async function cleanupTestData() {
+  const staleBefore = new Date(Date.now() - 3 * 3_600_000);
   const users = await prisma.user.findMany({
-    where: { email: { endsWith: TEST_DOMAIN } },
+    where: {
+      email: { endsWith: TEST_DOMAIN },
+      OR: [{ email: { contains: `-${runId}-` } }, { createdAt: { lt: staleBefore } }],
+    },
     select: { id: true },
   });
   const ids = users.map((user) => user.id);
   if (ids.length === 0) return;
-  await prisma.auditLog.deleteMany({
-    where: { OR: [{ actorId: { in: ids } }, { entity: "User", entityId: { in: ids } }] },
+
+  const exams = await prisma.exam.findMany({ where: { createdById: { in: ids } }, select: { id: true } });
+  const examIds = exams.map((exam) => exam.id);
+  const questions = await prisma.question.findMany({ where: { createdById: { in: ids } }, select: { id: true } });
+  const questionIds = questions.map((question) => question.id);
+  const attempts = await prisma.attempt.findMany({
+    where: { OR: [{ examId: { in: examIds } }, { userId: { in: ids } }] },
+    select: { id: true },
   });
-  await prisma.user.deleteMany({ where: { id: { in: ids } } });
+  const attemptIds = attempts.map((attempt) => attempt.id);
+
+  await prisma.$transaction([
+    prisma.report.deleteMany({ where: { attemptId: { in: attemptIds } } }),
+    prisma.attempt.deleteMany({ where: { id: { in: attemptIds } } }), // cascades questions, answers, incidents
+    prisma.enrollment.deleteMany({ where: { OR: [{ examId: { in: examIds } }, { userId: { in: ids } }] } }),
+    prisma.examQuestion.deleteMany({ where: { OR: [{ examId: { in: examIds } }, { questionId: { in: questionIds } }] } }),
+    prisma.exam.deleteMany({ where: { id: { in: examIds } } }), // cascades announcements
+    prisma.question.deleteMany({ where: { id: { in: questionIds } } }), // cascades options
+    prisma.auditLog.deleteMany({ where: { OR: [{ actorId: { in: ids } }, { entityId: { in: [...ids, ...examIds, ...questionIds] } }] } }),
+    prisma.userPreference.deleteMany({ where: { userId: { in: ids } } }),
+    prisma.user.deleteMany({ where: { id: { in: ids } } }),
+  ]);
 }
