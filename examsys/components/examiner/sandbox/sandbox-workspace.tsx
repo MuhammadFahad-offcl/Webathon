@@ -187,7 +187,7 @@ export function SandboxWorkspace({ attemptId, onSubmitted }: Readonly<ExamWorksp
 
   useEffect(() => {
     if (!data) return;
-    const timer = setInterval(onTick, 1000);
+    const timer = setInterval(() => onTick(), 1000);
     return () => clearInterval(timer);
   }, [data]);
 
