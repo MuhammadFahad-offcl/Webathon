@@ -39,14 +39,14 @@ describe("simulateFairness", () => {
       random: stableRandom,
     });
 
-    // One question at each difficulty means the balanced weighted difficulty is always 2,
-    // regardless of the selected marks.
-    expect(result.balanced).toEqual({
-      mean: 2,
-      standardDeviation: 0,
-      minimum: 2,
-      maximum: 2,
-    });
+    for (const paper of result.simulations) {
+      expect(paper.balancedDistribution).toEqual(distribution);
+      expect(
+        paper.traditionalDistribution.EASY +
+          paper.traditionalDistribution.MEDIUM +
+          paper.traditionalDistribution.HARD,
+      ).toBe(3);
+    }
   });
 
   it("reports marks and distinct topic coverage", () => {
